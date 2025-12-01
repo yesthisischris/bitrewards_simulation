@@ -1,34 +1,33 @@
 # Current Project Status
 
 ## Overview
-- Repository scaffolded with Poetry (Python 3.12), src layout at `src/bitrewards_simulation`.
-- PR1 implemented as an activity-only Mesa ABM skeleton: creators mint “work” contributions, users generate usage events; no economic flows yet.
-- Batch runner produces time-series CSVs for quick inspection and parameter sweeps.
+- Poetry-managed repo (Python 3.12) with new `bitrewards_abm` package structured into `domain/`, `infrastructure/`, and `simulation/`.
+- PR2 implemented: activity generation plus fee sharing, royalty propagation, and investor funding edges; clean architecture, no inline comments.
+- Batch runner emits time-series and run-summary CSVs for parameter sweeps.
 
 ## Implemented Components
-- `src/bitrewards_simulation/model/agents.py`
-  - `EconomicAgent`: baseline state (wealth, income placeholders, satisfaction placeholder), no churn logic.
-  - `CreatorAgent`: decides to mint contributions based on intrinsic/monetary utility; adds contributions to the model.
-  - `UserAgent`: generates usage events with constant gross_value and deterministic fee_amount; records events in the model.
-- `src/bitrewards_simulation/model/bitrewards_model.py`
-  - Holds agent collections, contribution registry, and usage events.
-  - No edges/splits or reward distribution; contributions are standalone nodes.
-  - DataCollector logs per-step counts: `step`, `contribution_count`, `usage_event_count`, `active_creator_count`, `active_user_count`.
-- `experiments/run_batch.py`
-  - Simple sweep over `max_usage_events_per_user`, `contribution_threshold`, `fee_share_rate`.
-  - Runs multiple repetitions, writing `data/timeseries.csv` and `data/run_summary.csv`.
+- `src/bitrewards_abm/domain`
+  - `entities.py`: `ContributionType` enum (`software_code`, `dataset`, `funding`), `Contribution`, `UsageEvent`.
+  - `parameters.py`: `SimulationParameters` including gas fee rate, tracing accuracy, default splits, funding splits, investor budgets.
+- `src/bitrewards_abm/infrastructure/graph_store.py`: NetworkX-backed DAG with split lookups for reward propagation.
+- `src/bitrewards_abm/simulation`
+  - `agents.py`: `CreatorAgent`, `InvestorAgent`, `UserAgent`, `EconomicAgent`; creators mint work with parents, investors buy funding contributions, users generate usage events.
+  - `model.py`: `BitRewardsModel` builds the graph, distributes fee pools upstream, tracks wealth, Gini for creators, and mean investor ROI.
+- `src/bitrewards_abm/run_simulation.py`: one-off runner printing tail of model metrics.
+- `experiments/run_batch.py`: sweeps core parameters (`creator_base_contribution_probability`, `user_usage_probability`, `gas_fee_share_rate`, `funding_split_fraction`) with repetitions; writes CSVs.
+- `visuals/story_pack.py`: generates visuals from PR2 outputs (trajectory per run, creator wealth histogram, investor ROI vs split/fee).
 
 ## Outputs
-- Latest batch run: `data/timeseries.csv` with columns `step`, contribution and usage counts, active agent counts, run metadata; 4,800 rows (24 runs × 200 steps).
-- `data/run_summary.csv` aggregates final-step metrics per run.
+- Latest batch: `data/timeseries.csv` columns include `step`, `contribution_count`, `usage_event_count`, `active_creator_count`, `active_investor_count`, `active_user_count`, `total_fee_distributed`, `creator_wealth_gini`, `investor_mean_roi` plus run metadata; 8 runs (2 reps × 4 combos) × 200 steps.
+- `data/run_summary.csv`: final-step metrics per run.
+- Visual outputs from story pack: `visuals/output/run_0_trajectory.png`, `investor_roi_vs_split.png`, `investor_roi_vs_fee_rate.png` (creator wealth histogram generates when given an agent CSV).
 
 ## Tooling & Config
-- Poetry-managed deps: `mesa`, `networkx`, `numpy`, `pandas` plus dev tools (`black`, `ruff`, `pytest`, `mypy`, `ipykernel`).
-- In-project virtualenv via `poetry.toml`.
+- Runtime deps: `mesa`, `networkx`, `numpy`, `pandas`; dev deps: `black`, `ruff`, `pytest`, `mypy`, `ipykernel`.
+- In-project virtualenv via `poetry.toml`; packages published from `src` include `bitrewards_abm` (and legacy `bitrewards_simulation` remains).
 
-## What’s Not Implemented (by design for PR1)
-- No reward/royalty distribution, no wealth/ROI, no funding contributions, no contribution types beyond “work,” no parent edges/splits, no satisfaction-based churn, no project-level logic.
+## What’s Not Implemented Yet
+- No satisfaction/churn logic, no richer contribution types beyond funding/work, no project-level modeling, no investor strategy beyond quality threshold.
 
 ## Suggested Next Steps
-- PR2: add royalty flow (fee pool distribution), graph edges for parent relations, and basic churn metrics.
-- PR3: introduce funding contributions/investor agent, contribution types, and richer metrics (wealth, Gini, ROI).
+- Add churn and satisfaction dynamics; extend contribution types and type-specific splits; richer investor heuristics using historical returns; expand metrics to per-type counts and ROI distributions.

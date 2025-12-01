@@ -1,5 +1,4 @@
 """Batch experiment runner for the BitRewardsModel."""
-
 from __future__ import annotations
 
 import itertools
@@ -8,7 +7,8 @@ from typing import Dict, Iterable, List
 
 import pandas as pd
 
-from bitrewards_simulation.model.bitrewards_model import BitRewardsModel
+from bitrewards_abm.domain.parameters import SimulationParameters
+from bitrewards_abm.simulation.model import BitRewardsModel
 
 
 def parameter_grid(variable_params: Dict[str, Iterable]) -> Iterable[Dict[str, object]]:
@@ -19,46 +19,37 @@ def parameter_grid(variable_params: Dict[str, Iterable]) -> Iterable[Dict[str, o
 
 
 def run_experiments() -> None:
-    fixed_params = {
-        "N_creators": 50,
-        "N_users": 200,
-        "max_steps": 200,
-    }
+    base_parameters = SimulationParameters()
     variable_params = {
-        "max_usage_events_per_user": [1, 3],
-        "contribution_threshold": [0.3, 0.5],
-        "fee_share_rate": [0.002, 0.005],
+        "creator_base_contribution_probability": [0.2, 0.4],
+        "user_usage_probability": [0.4, 0.7],
+        "gas_fee_share_rate": [0.002, 0.005],
+        "funding_split_fraction": [0.01, 0.02],
     }
-    repetitions_per_setting = 3
+    repetitions_per_setting = 2
 
     run_summaries: List[pd.Series] = []
     timeseries_frames: List[pd.DataFrame] = []
-
     run_id = 0
 
     for param_combo in parameter_grid(variable_params):
-        params = {**fixed_params, **param_combo}
-
         for rep in range(repetitions_per_setting):
-            model = BitRewardsModel(
-                **params,
-                random_seed=run_id,
-            )
-
-            while model.running:
+            parameters = SimulationParameters(**{**base_parameters.__dict__, **param_combo})
+            model = BitRewardsModel(parameters)
+            for _ in range(parameters.max_steps):
                 model.step()
 
             model_df = model.datacollector.get_model_vars_dataframe().reset_index()
             model_df["run_id"] = run_id
             model_df["rep"] = rep
-            for key, value in params.items():
+            for key, value in param_combo.items():
                 model_df[key] = value
             timeseries_frames.append(model_df)
 
             final_row = model_df.iloc[-1].copy()
             final_row["run_id"] = run_id
             final_row["rep"] = rep
-            for key, value in params.items():
+            for key, value in param_combo.items():
                 final_row[key] = value
             run_summaries.append(final_row)
 
@@ -70,14 +61,11 @@ def run_experiments() -> None:
     run_summary_df = pd.DataFrame(run_summaries)
     timeseries_df = pd.concat(timeseries_frames, ignore_index=True)
 
-    run_summary_path = out_dir / "run_summary.csv"
-    timeseries_path = out_dir / "timeseries.csv"
+    run_summary_df.to_csv(out_dir / "run_summary.csv", index=False)
+    timeseries_df.to_csv(out_dir / "timeseries.csv", index=False)
 
-    run_summary_df.to_csv(run_summary_path, index=False)
-    timeseries_df.to_csv(timeseries_path, index=False)
-
-    print(f"Wrote run summaries to {run_summary_path}")
-    print(f"Wrote time series to {timeseries_path}")
+    print(f"Wrote run summaries to {out_dir / 'run_summary.csv'}")
+    print(f"Wrote time series to {out_dir / 'timeseries.csv'}")
 
 
 if __name__ == "__main__":

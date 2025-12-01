@@ -12,6 +12,7 @@ dependencies = [
     "networkx (>=3.6,<4.0)",
     "numpy (>=2.3.5,<3.0.0)",
     "pandas (>=2.3.3,<3.0.0)",
+    "matplotlib (>=3.10.7,<4.0.0)",
 ]
 
 
@@ -22,7 +23,8 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry]
 package-mode = true
 packages = [
-    { include = "bitrewards_simulation", from = "src" }
+    { include = "bitrewards_simulation", from = "src" },
+    { include = "bitrewards_abm", from = "src" }
 ]
 
 [dependency-groups]
