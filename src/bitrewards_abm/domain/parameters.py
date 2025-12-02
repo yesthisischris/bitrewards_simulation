@@ -24,3 +24,7 @@ class SimulationParameters:
     funding_contribution_cost: float = 10.0
     investor_max_funding_per_step: int = 1
     investor_min_target_quality: float = 0.5
+    aspiration_income_per_step: float = 0.01
+    satisfaction_logistic_k: float = 1.5
+    satisfaction_churn_threshold: float = 0.15
+    satisfaction_churn_window: int = 15

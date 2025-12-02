@@ -16,6 +16,8 @@ class EconomicAgent(Agent):
         self.wealth = 0.0
         self.current_income = 0.0
         self.satisfaction = parameters.initial_agent_satisfaction
+        self.aspiration_income = parameters.aspiration_income_per_step
+        self.low_satisfaction_streak = 0
         self.is_active = True
 
     def reset_step_state(self) -> None:

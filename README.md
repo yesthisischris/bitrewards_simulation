@@ -162,6 +162,7 @@ satisfaction = 1 / (1 + math.exp(-k * (income_ratio - 1)))  # logistic
 	•	k is a sensitivity parameter.
 
 	•	If satisfaction falls below churn_threshold for churn_steps in a row, set active = False.
+	Status: implemented in the model with parameters satisfaction_logistic_k, satisfaction_churn_threshold, satisfaction_churn_window, and aspiration_income_per_step.
 
 Parameters:
 	•	k, churn_threshold, churn_steps defined in model parameter set.

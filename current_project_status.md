@@ -12,22 +12,22 @@
 - `src/bitrewards_abm/infrastructure/graph_store.py`: NetworkX-backed DAG with split lookups for reward propagation.
 - `src/bitrewards_abm/simulation`
   - `agents.py`: `CreatorAgent`, `InvestorAgent`, `UserAgent`, `EconomicAgent`; creators mint work with parents, investors buy funding contributions, users generate usage events.
-  - `model.py`: `BitRewardsModel` builds the graph, distributes fee pools upstream, tracks wealth, Gini for creators, and mean investor ROI.
+  - `model.py`: `BitRewardsModel` builds the graph, distributes fee pools upstream, tracks wealth, Gini for creators, mean investor ROI, and now applies satisfaction/churn lifecycle updates each step.
 - `src/bitrewards_abm/run_simulation.py`: one-off runner printing tail of model metrics.
 - `experiments/run_batch.py`: sweeps core parameters (`creator_base_contribution_probability`, `user_usage_probability`, `gas_fee_share_rate`, `funding_split_fraction`) with repetitions; writes CSVs.
-- `visuals/story_pack.py`: generates visuals from PR2 outputs (trajectory per run, creator wealth histogram, investor ROI vs split/fee).
+- `visuals/story_pack.py`: generates visuals from PR2/PR3 outputs (trajectory per run, creator wealth histogram, investor ROI vs split/fee, creator satisfaction vs churn).
 
 ## Outputs
-- Latest batch: `data/timeseries.csv` columns include `step`, `contribution_count`, `usage_event_count`, `active_creator_count`, `active_investor_count`, `active_user_count`, `total_fee_distributed`, `creator_wealth_gini`, `investor_mean_roi` plus run metadata; 8 runs (2 reps × 4 combos) × 200 steps.
-- `data/run_summary.csv`: final-step metrics per run.
-- Visual outputs from story pack: `visuals/output/run_0_trajectory.png`, `investor_roi_vs_split.png`, `investor_roi_vs_fee_rate.png` (creator wealth histogram generates when given an agent CSV).
+- Latest batch: `data/timeseries.csv` columns include counts plus `total_fee_distributed`, `creator_wealth_gini`, `investor_mean_roi`, `mean_*_satisfaction`, and churn counts per role; 8 runs (2 reps × 4 combos) × 200 steps.
+- `data/run_summary.csv`: final-step metrics per run (includes satisfaction and churn).
+- Visual outputs from story pack: `visuals/output/run_0_trajectory.png`, `run_0_creator_satisfaction_churn.png`, `investor_roi_vs_split.png`, `investor_roi_vs_fee_rate.png` (creator wealth histogram generates when given an agent CSV).
 
 ## Tooling & Config
 - Runtime deps: `mesa`, `networkx`, `numpy`, `pandas`; dev deps: `black`, `ruff`, `pytest`, `mypy`, `ipykernel`.
 - In-project virtualenv via `poetry.toml`; packages published from `src` include `bitrewards_abm` (and legacy `bitrewards_simulation` remains).
 
 ## What’s Not Implemented Yet
-- No satisfaction/churn logic, no richer contribution types beyond funding/work, no project-level modeling, no investor strategy beyond quality threshold.
+- Richer contribution types beyond funding/work, project-level modeling, investor strategy beyond quality threshold, per-role aspiration tuning.
 
 ## Suggested Next Steps
-- Add churn and satisfaction dynamics; extend contribution types and type-specific splits; richer investor heuristics using historical returns; expand metrics to per-type counts and ROI distributions.
+- Extend contribution types and type-specific splits; richer investor heuristics using historical returns; expand metrics to per-type counts and ROI distributions; per-agent panel exports for deeper analysis.

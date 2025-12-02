@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Dict, List, Type
 
 from mesa import Model
@@ -36,6 +37,12 @@ class BitRewardsModel(Model):
                 "total_fee_distributed": total_fee_distributed,
                 "creator_wealth_gini": creator_wealth_gini,
                 "investor_mean_roi": investor_mean_roi,
+                "mean_creator_satisfaction": mean_creator_satisfaction,
+                "mean_investor_satisfaction": mean_investor_satisfaction,
+                "mean_user_satisfaction": mean_user_satisfaction,
+                "creator_churned_count": creator_churned_count,
+                "investor_churned_count": investor_churned_count,
+                "user_churned_count": user_churned_count,
             },
             agent_reporters={
                 "wealth": "wealth",
@@ -55,6 +62,7 @@ class BitRewardsModel(Model):
         self.run_phase_for_agent_type(InvestorAgent)
         self.run_phase_for_agent_type(UserAgent)
         self.distribute_usage_event_fees()
+        self._update_agent_satisfaction_and_churn()
         self.datacollector.collect(self)
 
     def register_creator_contribution(
@@ -219,6 +227,26 @@ class BitRewardsModel(Model):
             self.total_fee_distributed_this_step += event.fee_amount
             self.distribute_fee_pool_for_event(event)
 
+    def _update_agent_satisfaction_and_churn(self) -> None:
+        epsilon = 1e-6
+        k = self.parameters.satisfaction_logistic_k
+        threshold = self.parameters.satisfaction_churn_threshold
+        window = self.parameters.satisfaction_churn_window
+        for agent in self.agent_by_identifier.values():
+            if not isinstance(agent, EconomicAgent):
+                continue
+            target_income = agent.aspiration_income
+            if target_income <= 0.0:
+                target_income = self.parameters.aspiration_income_per_step
+            income_ratio = agent.current_income / (target_income + epsilon)
+            agent.satisfaction = 1.0 / (1.0 + math.exp(-k * (income_ratio - 1.0)))
+            if agent.satisfaction < threshold:
+                agent.low_satisfaction_streak += 1
+            else:
+                agent.low_satisfaction_streak = 0
+            if agent.low_satisfaction_streak >= window:
+                agent.is_active = False
+
     def distribute_fee_pool_for_event(self, event: UsageEvent) -> None:
         remaining_items: List[tuple[str, float]] = [
             (event.contribution_id, event.fee_amount)
@@ -268,7 +296,7 @@ class BitRewardsModel(Model):
             return
         owner_identifier = contribution.owner_id
         agent = self.agent_by_identifier.get(owner_identifier)
-        if agent is None:
+        if agent is None or not agent.is_active:
             return
         agent.receive_income(amount)
 
@@ -343,3 +371,37 @@ def investor_mean_roi(model: BitRewardsModel) -> float:
     if not roi_values:
         return 0.0
     return sum(roi_values) / len(roi_values)
+
+
+def mean_creator_satisfaction(model: BitRewardsModel) -> float:
+    return mean_satisfaction(model.creators)
+
+
+def mean_investor_satisfaction(model: BitRewardsModel) -> float:
+    return mean_satisfaction(model.investors)
+
+
+def mean_user_satisfaction(model: BitRewardsModel) -> float:
+    return mean_satisfaction(model.users)
+
+
+def mean_satisfaction(agents: List[EconomicAgent]) -> float:
+    if not agents:
+        return 0.0
+    return sum(agent.satisfaction for agent in agents) / len(agents)
+
+
+def creator_churned_count(model: BitRewardsModel) -> int:
+    return churned_count(model.creators)
+
+
+def investor_churned_count(model: BitRewardsModel) -> int:
+    return churned_count(model.investors)
+
+
+def user_churned_count(model: BitRewardsModel) -> int:
+    return churned_count(model.users)
+
+
+def churned_count(agents: List[EconomicAgent]) -> int:
+    return sum(1 for agent in agents if not agent.is_active)

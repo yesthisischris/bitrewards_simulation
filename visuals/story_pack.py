@@ -110,6 +110,40 @@ def plot_investor_roi_vs_fee_rate(summary_path: Path, output_path: Path) -> None
     plt.close(fig)
 
 
+def plot_creator_satisfaction_and_churn(timeseries_path: Path, run_id: int, output_path: Path) -> None:
+    df = load_csv(timeseries_path)
+    required = {
+        "run_id",
+        "step",
+        "mean_creator_satisfaction",
+        "active_creator_count",
+        "creator_churned_count",
+    }
+    missing = required - set(df.columns)
+    if missing:
+        return
+    run_df = df[df["run_id"] == run_id].copy()
+    if run_df.empty:
+        return
+    run_df = run_df.sort_values("step")
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    ax1.plot(run_df["step"], run_df["mean_creator_satisfaction"], label="Mean creator satisfaction", color="teal")
+    ax1.set_xlabel("Step")
+    ax1.set_ylabel("Satisfaction")
+    ax2 = ax1.twinx()
+    ax2.plot(run_df["step"], run_df["active_creator_count"], label="Active creators", color="steelblue")
+    ax2.plot(run_df["step"], run_df["creator_churned_count"], label="Churned creators", color="darkorange", linestyle="--")
+    ax2.set_ylabel("Creators")
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    ax2.legend(lines_1 + lines_2, labels_1 + labels_2, loc="upper right")
+    ax1.set_title(f"Run {run_id}: Creator Satisfaction and Churn")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeseries", type=Path, default=Path("data/timeseries.csv"))
@@ -130,6 +164,7 @@ def main() -> None:
         plot_creator_wealth_histogram(args.agents, output_dir / "creator_wealth_histogram.png")
     plot_investor_roi_vs_split(args.run_summary, output_dir / "investor_roi_vs_split.png")
     plot_investor_roi_vs_fee_rate(args.run_summary, output_dir / "investor_roi_vs_fee_rate.png")
+    plot_creator_satisfaction_and_churn(args.timeseries, args.run_id, output_dir / f"run_{args.run_id}_creator_satisfaction_churn.png")
 
 
 if __name__ == "__main__":
