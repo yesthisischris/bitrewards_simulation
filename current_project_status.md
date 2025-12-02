@@ -19,7 +19,12 @@
 - `docs/data_schema.md`: documents the stable schema for `timeseries.csv` and `run_summary.csv`, including units, interpretation, and `scenario_name`.
 - `docs/running_experiments.md`: walkthrough for single runs, batch runs, outputs, and visuals.
 - `visuals/story_pack.py`: adds sustainability and fairness views (active agents and satisfaction by role over time, role reward shares across runs, creator Gini vs creator reward share) and scenario comparison plots (investor ROI, creator satisfaction, creator churn) alongside the existing ROI and trajectory plots.
-- `configs/`: baseline and example scenarios (`baseline.toml`, `low_tracing_accuracy.toml`, `high_funding_share.toml`) for reproducible batches.
+- `visuals/kosmos_reference.py`: compact dashboard for a reference scenario (active agents, satisfaction and churn, role reward shares).
+- `configs/`: named scenarios (`baseline.toml`, `low_tracing_accuracy.toml`, `high_funding_share.toml`, `high_investor_share.toml`) for reproducible batches.
+- `docs/running_experiments.md`: walkthrough for single runs, batch runs, outputs, and visuals.
+- `docs/kosmos_brief.md`: concise handoff for Kosmos describing objectives, model, data schema, scenarios, and research questions.
+- `data/reference/`: placeholder layout for per-scenario reference datasets (`timeseries.csv`, `run_summary.csv`).
+- `tests/test_kosmos_reference.py`: smoke test to ensure scenario configs load and produce non-degenerate runs.
 
 ## Outputs
 - Batch runs emit `timeseries.csv` (per-step metrics per run) and `run_summary.csv` (final-step metrics plus run-level satisfaction means) per scenario directory, using the documented schema in `docs/data_schema.md`.
@@ -33,6 +38,7 @@
 ## What’s Not Implemented Yet
 - Per agent panel exports beyond aggregate role and type metrics.
 - Additional fairness metrics (for example role-specific Gini, tail concentration of income).
+- Deeper empirical calibration of the four scenarios and publishing full reference datasets.
 
 ## Suggested Next Steps
 - Add per-agent panel exports to complement scenario-level aggregates.

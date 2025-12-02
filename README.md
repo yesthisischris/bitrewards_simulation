@@ -27,6 +27,16 @@ Model run length: typically 200–500 steps per run, configurable.
 - The stable schema for both files is documented in `docs/data_schema.md`. Downstream analysis tools should rely on that schema.
 - See `docs/running_experiments.md` for CLI usage and scenario configuration.
 
+## Kosmos handoff
+
+This repository is designed so an AI scientist (for example Kosmos) can analyze the BITrewards protocol.
+
+- `docs/kosmos_brief.md` describes the model, data, scenarios, and the research questions to investigate.
+- `configs/` holds TOML configs for named scenarios (`baseline`, `low_tracing_accuracy`, `high_funding_share`, `high_investor_share`).
+- `data/reference/<scenario_name>/` is the layout for reference datasets (`timeseries.csv`, `run_summary.csv`) generated from those configs.
+- `docs/data_schema.md` documents the stable CSV schema.
+- `visuals/kosmos_reference.py` generates a small dashboard (active agents, satisfaction/churn, role reward shares) for a chosen scenario.
+
 ⸻
 
 2. High level conceptual model

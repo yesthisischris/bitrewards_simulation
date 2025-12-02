@@ -1,12 +1,43 @@
 [simulation]
-tracing_accuracy = 0.4
+creator_count = 30
+investor_count = 6
+user_count = 60
+
+max_steps = 240
+
+gas_fee_share_rate = 0.005
+tracing_accuracy = 0.35
+
+creator_base_contribution_probability = 0.3
+quality_noise_scale = 0.1
+user_usage_probability = 0.6
+base_gross_value = 1.0
+
+min_creator_skill = 0.3
+max_creator_skill = 0.9
+
+initial_investor_budget = 150.0
+initial_agent_satisfaction = 1.0
+
+default_derivative_split = 0.5
+supporting_derivative_split = 0.25
+
+funding_split_fraction = 0.02
+funding_contribution_cost = 10.0
+investor_max_funding_per_step = 1
+investor_min_target_quality = 0.5
+
+aspiration_income_per_step = 0.02
+satisfaction_logistic_k = 1.5
+satisfaction_churn_threshold = 0.2
+satisfaction_churn_window = 20
 
 [experiment]
 name = "low_tracing_accuracy"
 runs_per_config = 8
-steps_per_run = 200
-random_seed_base = 100
+steps_per_run = 240
+random_seed_base = 110
 
 [experiment.sweeps]
-gas_fee_share_rate = [0.002, 0.005]
+gas_fee_share_rate = [0.003, 0.005]
 funding_split_fraction = [0.01, 0.02]
