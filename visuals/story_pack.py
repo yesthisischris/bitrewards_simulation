@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import List
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -48,16 +49,17 @@ def plot_single_run(timeseries_path: Path, run_id: int, output_path: Path) -> No
 
 def plot_creator_wealth_histogram(agent_path: Path, output_path: Path) -> None:
     df = load_csv(agent_path)
-    required = {"Step", "AgentID", "wealth", "agent_type"}
+    required = {"agent_type", "wealth"}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"Missing columns in agent data: {missing}")
     creators = df[df["agent_type"] == "CreatorAgent"].copy()
     if creators.empty:
         raise ValueError("No creator rows in agent data")
-    final_step = creators["Step"].max()
-    final_creators = creators[creators["Step"] == final_step]
-    wealth_values = final_creators["wealth"]
+    if "Step" in creators.columns:
+        final_step = creators["Step"].max()
+        creators = creators[creators["Step"] == final_step]
+    wealth_values = creators["wealth"]
 
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.hist(wealth_values, bins=20)
@@ -336,12 +338,63 @@ def plot_creator_share_vs_gini(summary_path: Path, output_path: Path) -> None:
     plt.close(fig)
 
 
+def load_scenario_summaries(scenario_dirs: List[Path]) -> pd.DataFrame:
+    frames = []
+    for scenario_dir in scenario_dirs:
+        summary_path = scenario_dir / "run_summary.csv"
+        df = load_csv(summary_path)
+        scenario_label = scenario_dir.name
+        if "scenario_name" in df.columns:
+            scenario_values = df["scenario_name"].dropna().unique()
+            if len(scenario_values) == 1:
+                scenario_label = str(scenario_values[0])
+        df = df.copy()
+        df["scenario"] = scenario_label
+        frames.append(df)
+    if not frames:
+        raise ValueError("No scenario directories provided.")
+    combined = pd.concat(frames, ignore_index=True)
+    return combined
+
+
+def plot_scenario_comparison(summary_dirs: List[Path], output_dir: Path) -> None:
+    df = load_scenario_summaries(summary_dirs)
+    metrics = [
+        ("investor_mean_roi", "Investor ROI"),
+        ("mean_creator_satisfaction", "Creator satisfaction"),
+        ("creator_churned_count", "Creator churn count"),
+    ]
+    grouped = df.groupby("scenario")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for column, label in metrics:
+        if column not in df.columns:
+            continue
+        aggregated = grouped[column].mean().reset_index()
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.bar(aggregated["scenario"], aggregated[column])
+        ax.set_xlabel("Scenario")
+        ax.set_ylabel(label)
+        ax.set_title(f"{label} by scenario")
+        fig.tight_layout()
+        fig.savefig(output_dir / f"scenario_{column}.png", dpi=150)
+        plt.close(fig)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeseries", type=Path, default=Path("data/timeseries.csv"))
     parser.add_argument("--run-summary", dest="run_summary", type=Path, default=Path("data/run_summary.csv"))
     parser.add_argument("--agents", type=Path, default=Path("data/agents_run0.csv"))
     parser.add_argument("--run-id", type=int, default=0)
+    parser.add_argument(
+        "--scenario-dir",
+        type=Path,
+        action="append",
+        default=[],
+        help="Optional directories containing run_summary.csv for scenario comparison.",
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("visuals/output"))
     return parser.parse_args()
 
@@ -360,6 +413,9 @@ def main() -> None:
     plot_population_and_satisfaction_by_role(args.timeseries, args.run_id, output_dir / f"run_{args.run_id}_population_and_satisfaction.png")
     plot_role_reward_shares(args.run_summary, output_dir / "role_reward_shares.png")
     plot_creator_share_vs_gini(args.run_summary, output_dir / "creator_share_vs_gini.png")
+    if args.scenario_dir:
+        scenario_output_dir = output_dir / "scenarios"
+        plot_scenario_comparison(args.scenario_dir, scenario_output_dir)
 
 
 if __name__ == "__main__":
