@@ -144,6 +144,51 @@ def plot_creator_satisfaction_and_churn(timeseries_path: Path, run_id: int, outp
     plt.close(fig)
 
 
+def plot_population_and_satisfaction_by_role(timeseries_path: Path, run_id: int, output_path: Path) -> None:
+    df = load_csv(timeseries_path)
+    required = {
+        "run_id",
+        "step",
+        "active_creator_count",
+        "active_investor_count",
+        "active_user_count",
+        "mean_creator_satisfaction",
+        "mean_investor_satisfaction",
+        "mean_user_satisfaction",
+    }
+    missing = required - set(df.columns)
+    if missing:
+        return
+    run_df = df[df["run_id"] == run_id].copy()
+    if run_df.empty:
+        return
+    run_df = run_df.sort_values("step")
+
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    ax1.plot(run_df["step"], run_df["active_creator_count"], label="Active creators")
+    ax1.plot(run_df["step"], run_df["active_investor_count"], label="Active investors")
+    ax1.plot(run_df["step"], run_df["active_user_count"], label="Active users")
+    ax1.set_xlabel("Step")
+    ax1.set_ylabel("Active agents")
+    ax1.legend(loc="upper left")
+
+    ax2 = ax1.twinx()
+    ax2.plot(run_df["step"], run_df["mean_creator_satisfaction"], linestyle="--", label="Creator satisfaction")
+    ax2.plot(run_df["step"], run_df["mean_investor_satisfaction"], linestyle="--", label="Investor satisfaction")
+    ax2.plot(run_df["step"], run_df["mean_user_satisfaction"], linestyle="--", label="User satisfaction")
+    ax2.set_ylabel("Mean satisfaction")
+
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    ax2.legend(lines_1 + lines_2, labels_1 + labels_2, loc="lower right")
+
+    ax1.set_title(f"Run {run_id}: Active Agents and Satisfaction by Role")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
 def plot_total_rewards_by_type(summary_path: Path, run_id: int, output_path: Path) -> None:
     df = load_csv(summary_path)
     required = {
@@ -218,6 +263,79 @@ def plot_total_rewards_by_role(summary_path: Path, run_id: int, output_path: Pat
     plt.close(fig)
 
 
+def plot_role_reward_shares(summary_path: Path, output_path: Path) -> None:
+    df = load_csv(summary_path)
+    required = {
+        "total_income_creators",
+        "total_income_investors",
+        "total_income_users",
+    }
+    missing = required - set(df.columns)
+    if missing:
+        return
+
+    total_creators = float(df["total_income_creators"].sum())
+    total_investors = float(df["total_income_investors"].sum())
+    total_users = float(df["total_income_users"].sum())
+
+    values = [total_creators, total_investors, total_users]
+    total_value = sum(values)
+    if total_value <= 0.0:
+        return
+
+    labels = ["Creators", "Investors", "Users"]
+    shares = [value / total_value for value in values]
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(labels, shares)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_ylabel("Share of total income")
+    ax.set_title("Role Reward Shares Across All Runs")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+def plot_creator_share_vs_gini(summary_path: Path, output_path: Path) -> None:
+    df = load_csv(summary_path)
+    required = {
+        "creator_wealth_gini",
+        "total_income_creators",
+        "total_income_investors",
+        "total_income_users",
+    }
+    missing = required - set(df.columns)
+    if missing:
+        return
+
+    income_creators = df["total_income_creators"].astype(float)
+    income_investors = df["total_income_investors"].astype(float)
+    income_users = df["total_income_users"].astype(float)
+    total_income = income_creators + income_investors + income_users
+    mask = total_income > 0.0
+    filtered = df[mask].copy()
+    if filtered.empty:
+        return
+
+    creator_share = filtered["total_income_creators"] / (
+        filtered["total_income_creators"]
+        + filtered["total_income_investors"]
+        + filtered["total_income_users"]
+    )
+    gini_values = filtered["creator_wealth_gini"]
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.scatter(gini_values, creator_share)
+    ax.set_xlabel("Creator wealth Gini")
+    ax.set_ylabel("Creator share of role income")
+    ax.set_title("Creator Inequality vs Creator Reward Share")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeseries", type=Path, default=Path("data/timeseries.csv"))
@@ -239,8 +357,9 @@ def main() -> None:
     plot_investor_roi_vs_split(args.run_summary, output_dir / "investor_roi_vs_split.png")
     plot_investor_roi_vs_fee_rate(args.run_summary, output_dir / "investor_roi_vs_fee_rate.png")
     plot_creator_satisfaction_and_churn(args.timeseries, args.run_id, output_dir / f"run_{args.run_id}_creator_satisfaction_churn.png")
-    plot_total_rewards_by_type(args.run_summary, args.run_id, output_dir / f"run_{args.run_id}_rewards_by_type.png")
-    plot_total_rewards_by_role(args.run_summary, args.run_id, output_dir / f"run_{args.run_id}_rewards_by_role.png")
+    plot_population_and_satisfaction_by_role(args.timeseries, args.run_id, output_dir / f"run_{args.run_id}_population_and_satisfaction.png")
+    plot_role_reward_shares(args.run_summary, output_dir / "role_reward_shares.png")
+    plot_creator_share_vs_gini(args.run_summary, output_dir / "creator_share_vs_gini.png")
 
 
 if __name__ == "__main__":

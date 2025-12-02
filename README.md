@@ -21,6 +21,11 @@ We explicitly do not simulate blockchain internals. We simulate economic and beh
 Time unit: one “step” = one week (or similar consistent unit).
 Model run length: typically 200–500 steps per run, configurable.
 
+## Data outputs
+
+- `experiments/run_batch.py` writes `data/timeseries.csv` (per-step metrics per run) and `data/run_summary.csv` (one row per run with final metrics and aggregates).
+- The stable schema for both files is documented in `docs/data_schema.md`. Downstream analysis tools should rely on that schema.
+
 ⸻
 
 2. High level conceptual model

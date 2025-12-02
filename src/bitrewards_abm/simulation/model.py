@@ -21,6 +21,7 @@ class BitRewardsModel(Model):
         self.usage_events: List[UsageEvent] = []
         self.next_contribution_index = 0
         self.total_fee_distributed_this_step = 0.0
+        self.cumulative_fee_distributed = 0.0
         self.total_usage_events_this_step = 0
         self.agent_by_identifier: Dict[int, EconomicAgent] = {}
         self.creators: List[CreatorAgent] = []
@@ -51,6 +52,7 @@ class BitRewardsModel(Model):
                 "active_investor_count": active_investor_count,
                 "active_user_count": active_user_count,
                 "total_fee_distributed": total_fee_distributed,
+                "cumulative_fee_distributed": cumulative_fee_distributed,
                 "creator_wealth_gini": creator_wealth_gini,
                 "investor_mean_roi": investor_mean_roi,
                 "mean_creator_satisfaction": mean_creator_satisfaction,
@@ -59,12 +61,18 @@ class BitRewardsModel(Model):
                 "creator_churned_count": creator_churned_count,
                 "investor_churned_count": investor_churned_count,
                 "user_churned_count": user_churned_count,
+                "core_research_contribution_count": core_research_contribution_count,
+                "funding_contribution_count": funding_contribution_count,
+                "supporting_contribution_count": supporting_contribution_count,
                 "total_reward_core_research": total_reward_core_research,
                 "total_reward_funding": total_reward_funding,
                 "total_reward_supporting": total_reward_supporting,
                 "total_income_creators": total_income_creators,
                 "total_income_investors": total_income_investors,
                 "total_income_users": total_income_users,
+                "role_income_share_creators": role_income_share_creators,
+                "role_income_share_investors": role_income_share_investors,
+                "role_income_share_users": role_income_share_users,
             },
             agent_reporters={
                 "wealth": "wealth",
@@ -262,6 +270,7 @@ class BitRewardsModel(Model):
                 continue
             self.total_usage_events_this_step += 1
             self.total_fee_distributed_this_step += event.fee_amount
+            self.cumulative_fee_distributed += event.fee_amount
             self.distribute_fee_pool_for_event(event)
 
     def _update_agent_satisfaction_and_churn(self) -> None:
@@ -369,6 +378,10 @@ def total_fee_distributed(model: BitRewardsModel) -> float:
     return model.total_fee_distributed_this_step
 
 
+def cumulative_fee_distributed(model: BitRewardsModel) -> float:
+    return model.cumulative_fee_distributed
+
+
 def active_creator_count(model: BitRewardsModel) -> int:
     return count_active_agents_for_type(model, CreatorAgent)
 
@@ -463,6 +476,25 @@ def churned_count(agents: List[EconomicAgent]) -> int:
     return sum(1 for agent in agents if not agent.is_active)
 
 
+def contribution_count_for_type(
+    model: BitRewardsModel,
+    contribution_type: ContributionType,
+) -> int:
+    return sum(1 for contribution in model.contributions.values() if contribution.contribution_type is contribution_type)
+
+
+def core_research_contribution_count(model: BitRewardsModel) -> int:
+    return contribution_count_for_type(model, ContributionType.CORE_RESEARCH)
+
+
+def funding_contribution_count(model: BitRewardsModel) -> int:
+    return contribution_count_for_type(model, ContributionType.FUNDING)
+
+
+def supporting_contribution_count(model: BitRewardsModel) -> int:
+    return contribution_count_for_type(model, ContributionType.SUPPORTING)
+
+
 def total_reward_core_research(model: BitRewardsModel) -> float:
     return model.total_reward_paid_by_type.get(ContributionType.CORE_RESEARCH, 0.0)
 
@@ -485,3 +517,24 @@ def total_income_investors(model: BitRewardsModel) -> float:
 
 def total_income_users(model: BitRewardsModel) -> float:
     return model.total_reward_paid_by_role.get("user", 0.0)
+
+
+def role_income_share_creators(model: BitRewardsModel) -> float:
+    total_fee = model.cumulative_fee_distributed
+    if total_fee <= 0.0:
+        return 0.0
+    return total_income_creators(model) / total_fee
+
+
+def role_income_share_investors(model: BitRewardsModel) -> float:
+    total_fee = model.cumulative_fee_distributed
+    if total_fee <= 0.0:
+        return 0.0
+    return total_income_investors(model) / total_fee
+
+
+def role_income_share_users(model: BitRewardsModel) -> float:
+    total_fee = model.cumulative_fee_distributed
+    if total_fee <= 0.0:
+        return 0.0
+    return total_income_users(model) / total_fee
