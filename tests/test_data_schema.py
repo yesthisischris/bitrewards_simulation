@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from textwrap import dedent
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -9,32 +10,37 @@ if str(ROOT) not in sys.path:
 
 import pandas as pd
 
-from bitrewards_abm.domain.parameters import SimulationParameters
-from experiments.run_batch import run_experiments
+from experiments.run_batch import run_experiments_for_config
 
 
 def test_data_schema_and_metrics(tmp_path: Path) -> None:
-    base_parameters = SimulationParameters(
-        creator_count=5,
-        investor_count=2,
-        user_count=5,
-        max_steps=20,
-    )
-    variable_params = {
-        "creator_base_contribution_probability": [
-            base_parameters.creator_base_contribution_probability
-        ],
-        "user_usage_probability": [base_parameters.user_usage_probability],
-        "gas_fee_share_rate": [base_parameters.gas_fee_share_rate],
-        "funding_split_fraction": [base_parameters.funding_split_fraction],
-    }
+    config_text = dedent(
+        """
+        [simulation]
+        creator_count = 5
+        investor_count = 2
+        user_count = 5
+        max_steps = 20
+        gas_fee_share_rate = 0.005
+        funding_split_fraction = 0.02
+        creator_base_contribution_probability = 0.25
+        user_usage_probability = 0.6
+        tracing_accuracy = 0.8
 
-    run_experiments(
-        out_dir=tmp_path,
-        base_parameters=base_parameters,
-        repetitions_per_setting=1,
-        variable_params=variable_params,
-    )
+        [experiment]
+        name = "schema_test"
+        runs_per_config = 1
+        steps_per_run = 20
+
+        [experiment.sweeps]
+        gas_fee_share_rate = [0.005]
+        funding_split_fraction = [0.02]
+        """
+    ).strip()
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(config_text)
+
+    run_experiments_for_config(config_path, out_dir=tmp_path)
 
     timeseries_path = tmp_path / "timeseries.csv"
     summary_path = tmp_path / "run_summary.csv"
@@ -75,6 +81,7 @@ def test_data_schema_and_metrics(tmp_path: Path) -> None:
         "total_income_users",
         "gas_fee_share_rate",
         "funding_split_fraction",
+        "scenario_name",
     }
     missing_timeseries = required_timeseries_columns - set(timeseries_df.columns)
     assert not missing_timeseries
@@ -100,6 +107,7 @@ def test_data_schema_and_metrics(tmp_path: Path) -> None:
         "mean_creator_satisfaction_over_run",
         "mean_investor_satisfaction_over_run",
         "mean_user_satisfaction_over_run",
+        "scenario_name",
     }
     missing_summary = required_summary_columns - set(summary_df.columns)
     assert not missing_summary

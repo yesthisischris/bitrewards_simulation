@@ -28,6 +28,7 @@ Each row is a single step `step` in a single run `run_id`.
 | `run_id` | int | Unique run identifier within a batch. |
 | `rep` | int | Repetition index within a parameter setting. |
 | `step` | int | 1 based Mesa step counter. |
+| `scenario_name` | str | Scenario label from the experiment config. |
 
 ### Activity and usage
 
@@ -131,5 +132,6 @@ Additional run-level columns:
 | `mean_creator_satisfaction_over_run` | float | Average of `mean_creator_satisfaction` over steps in this run. |
 | `mean_investor_satisfaction_over_run` | float | Average of `mean_investor_satisfaction` over steps. |
 | `mean_user_satisfaction_over_run` | float | Average of `mean_user_satisfaction` over steps. |
+| `scenario_name` | str | Scenario label from the experiment config. |
 
 Downstream tools should treat `run_summary.csv` as the primary high-level view and consult `timeseries.csv` when temporal dynamics matter.

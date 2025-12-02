@@ -1,0 +1,12 @@
+[simulation]
+funding_split_fraction = 0.05
+
+[experiment]
+name = "high_funding_share"
+runs_per_config = 8
+steps_per_run = 200
+random_seed_base = 200
+
+[experiment.sweeps]
+gas_fee_share_rate = [0.002, 0.005]
+funding_split_fraction = [0.03, 0.05]

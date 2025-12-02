@@ -25,6 +25,7 @@ Model run length: typically 200–500 steps per run, configurable.
 
 - `experiments/run_batch.py` writes `data/timeseries.csv` (per-step metrics per run) and `data/run_summary.csv` (one row per run with final metrics and aggregates).
 - The stable schema for both files is documented in `docs/data_schema.md`. Downstream analysis tools should rely on that schema.
+- See `docs/running_experiments.md` for CLI usage and scenario configuration.
 
 ⸻
 

@@ -1,0 +1,34 @@
+[simulation]
+creator_count = 20
+investor_count = 5
+user_count = 40
+max_steps = 200
+gas_fee_share_rate = 0.005
+tracing_accuracy = 0.8
+creator_base_contribution_probability = 0.3
+quality_noise_scale = 0.1
+user_usage_probability = 0.6
+base_gross_value = 1.0
+min_creator_skill = 0.3
+max_creator_skill = 0.9
+initial_investor_budget = 100.0
+initial_agent_satisfaction = 1.0
+default_derivative_split = 0.5
+funding_split_fraction = 0.02
+funding_contribution_cost = 10.0
+investor_max_funding_per_step = 1
+investor_min_target_quality = 0.5
+aspiration_income_per_step = 0.01
+satisfaction_logistic_k = 1.5
+satisfaction_churn_threshold = 0.15
+satisfaction_churn_window = 15
+
+[experiment]
+name = "baseline"
+runs_per_config = 8
+steps_per_run = 200
+random_seed_base = 1
+
+[experiment.sweeps]
+gas_fee_share_rate = [0.002, 0.005]
+funding_split_fraction = [0.01, 0.02]
