@@ -26,6 +26,22 @@ class BitRewardsModel(Model):
         self.creators: List[CreatorAgent] = []
         self.investors: List[InvestorAgent] = []
         self.users: List[UserAgent] = []
+        self.reward_paid_by_type_this_step: Dict[ContributionType, float] = {
+            contribution_type: 0.0 for contribution_type in ContributionType
+        }
+        self.reward_paid_by_role_this_step: Dict[str, float] = {
+            "creator": 0.0,
+            "investor": 0.0,
+            "user": 0.0,
+        }
+        self.total_reward_paid_by_type: Dict[ContributionType, float] = {
+            contribution_type: 0.0 for contribution_type in ContributionType
+        }
+        self.total_reward_paid_by_role: Dict[str, float] = {
+            "creator": 0.0,
+            "investor": 0.0,
+            "user": 0.0,
+        }
         self.datacollector = DataCollector(
             model_reporters={
                 "step": lambda m: m.steps,
@@ -43,6 +59,12 @@ class BitRewardsModel(Model):
                 "creator_churned_count": creator_churned_count,
                 "investor_churned_count": investor_churned_count,
                 "user_churned_count": user_churned_count,
+                "total_reward_core_research": total_reward_core_research,
+                "total_reward_funding": total_reward_funding,
+                "total_reward_supporting": total_reward_supporting,
+                "total_income_creators": total_income_creators,
+                "total_income_investors": total_income_investors,
+                "total_income_users": total_income_users,
             },
             agent_reporters={
                 "wealth": "wealth",
@@ -53,11 +75,18 @@ class BitRewardsModel(Model):
         )
         self.create_initial_population()
 
-    def step(self) -> None:
+    def reset_step_internal_state(self) -> None:
         self.reset_agents_for_new_step()
         self.usage_events.clear()
         self.total_fee_distributed_this_step = 0.0
         self.total_usage_events_this_step = 0
+        for contribution_type in self.reward_paid_by_type_this_step:
+            self.reward_paid_by_type_this_step[contribution_type] = 0.0
+        for role in self.reward_paid_by_role_this_step:
+            self.reward_paid_by_role_this_step[role] = 0.0
+
+    def step(self) -> None:
+        self.reset_step_internal_state()
         self.run_phase_for_agent_type(CreatorAgent)
         self.run_phase_for_agent_type(InvestorAgent)
         self.run_phase_for_agent_type(UserAgent)
@@ -86,13 +115,15 @@ class BitRewardsModel(Model):
         )
         self.contributions[identifier] = contribution
         self.contribution_graph.add_contribution_node(identifier)
-        for parent in parents:
-            if self.random.random() <= self.parameters.tracing_accuracy:
-                self.contribution_graph.add_parent_child_edge(
-                    parent_id=parent,
-                    child_id=identifier,
-                    split_fraction=self.parameters.default_derivative_split,
-                )
+        derivative_split = self.parameters.get_derivative_split_for(contribution_type)
+        if derivative_split > 0.0:
+            for parent in parents:
+                if self.random.random() <= self.parameters.tracing_accuracy:
+                    self.contribution_graph.add_parent_child_edge(
+                        parent_id=parent,
+                        child_id=identifier,
+                        split_fraction=derivative_split,
+                    )
         return identifier
 
     def register_funding_contribution(
@@ -115,17 +146,23 @@ class BitRewardsModel(Model):
         )
         self.contributions[identifier] = contribution
         self.contribution_graph.add_contribution_node(identifier)
-        self.contribution_graph.add_parent_child_edge(
-            parent_id=identifier,
-            child_id=target_identifier,
-            split_fraction=self.parameters.funding_split_fraction,
+        funding_split = self.parameters.get_funding_split_for_target_type(
+            target_contribution.contribution_type
         )
+        if funding_split > 0.0:
+            self.contribution_graph.add_parent_child_edge(
+                parent_id=identifier,
+                child_id=target_identifier,
+                split_fraction=funding_split,
+            )
         return identifier
 
     def register_usage_event(self, contribution_identifier: str, gross_value: float) -> None:
         if contribution_identifier not in self.contributions:
             return
-        fee_amount = gross_value * self.parameters.gas_fee_share_rate
+        contribution = self.contributions[contribution_identifier]
+        base_share = self.parameters.get_base_royalty_share_for(contribution.contribution_type)
+        fee_amount = gross_value * self.parameters.gas_fee_share_rate * base_share
         usage_event = UsageEvent(
             contribution_id=contribution_identifier,
             gross_value=gross_value,
@@ -290,7 +327,18 @@ class BitRewardsModel(Model):
                     continue
                 remaining_items.append((parent_identifier, amount))
 
+    def _infer_role_for_agent(self, agent: EconomicAgent) -> str | None:
+        if isinstance(agent, CreatorAgent):
+            return "creator"
+        if isinstance(agent, InvestorAgent):
+            return "investor"
+        if isinstance(agent, UserAgent):
+            return "user"
+        return None
+
     def pay_contribution_owner(self, contribution_identifier: str, amount: float) -> None:
+        if amount <= 0.0:
+            return
         contribution = self.contributions.get(contribution_identifier)
         if contribution is None:
             return
@@ -299,6 +347,14 @@ class BitRewardsModel(Model):
         if agent is None or not agent.is_active:
             return
         agent.receive_income(amount)
+        contribution_type = contribution.contribution_type
+        self.reward_paid_by_type_this_step[contribution_type] += amount
+        self.total_reward_paid_by_type[contribution_type] += amount
+        role_name = self._infer_role_for_agent(agent)
+        if role_name is None:
+            return
+        self.reward_paid_by_role_this_step[role_name] += amount
+        self.total_reward_paid_by_role[role_name] += amount
 
 
 def contribution_count(model: BitRewardsModel) -> int:
@@ -405,3 +461,27 @@ def user_churned_count(model: BitRewardsModel) -> int:
 
 def churned_count(agents: List[EconomicAgent]) -> int:
     return sum(1 for agent in agents if not agent.is_active)
+
+
+def total_reward_core_research(model: BitRewardsModel) -> float:
+    return model.total_reward_paid_by_type.get(ContributionType.CORE_RESEARCH, 0.0)
+
+
+def total_reward_funding(model: BitRewardsModel) -> float:
+    return model.total_reward_paid_by_type.get(ContributionType.FUNDING, 0.0)
+
+
+def total_reward_supporting(model: BitRewardsModel) -> float:
+    return model.total_reward_paid_by_type.get(ContributionType.SUPPORTING, 0.0)
+
+
+def total_income_creators(model: BitRewardsModel) -> float:
+    return model.total_reward_paid_by_role.get("creator", 0.0)
+
+
+def total_income_investors(model: BitRewardsModel) -> float:
+    return model.total_reward_paid_by_role.get("investor", 0.0)
+
+
+def total_income_users(model: BitRewardsModel) -> float:
+    return model.total_reward_paid_by_role.get("user", 0.0)

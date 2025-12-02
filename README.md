@@ -114,6 +114,31 @@ IDs of parent contributions (direct inspirations or dependencies).
 For extensibility, for example:
 	•	{"role": "reviewer"} or {"kind": "initiator"}.
 
+### Contribution types in the simulation
+
+The simulation groups roles into three contribution categories:
+	•	core_research
+		•	Software code, scientific discoveries, datasets, hardware designs
+	•	funding
+		•	Financial investments and funding NFTs that receive a small royalty share from downstream usage
+	•	supporting
+		•	Reviews, bug fixes, educational content, introductions, recommendations, curation, moderation, events
+
+Creator roles such as developer or scientist mint core_research. Supporting roles (for example reviewer or curator) mint supporting. Investor agents mint funding contributions that attach to a target core_research contribution.
+
+Reward splits are driven by SimulationParameters and helper methods:
+	•	get_base_royalty_share_for(contribution_type)
+	•	get_derivative_split_for(contribution_type)
+	•	get_funding_split_for_target_type(contribution_type)
+
+Baseline split parameters:
+	•	Gas fee share: gas_fee_share_rate = 0.005 (0.5 percent of gross value enters the pool)
+	•	Derivative splits:
+		•	core_research children pass default_derivative_split = 0.5 upstream
+		•	supporting children pass supporting_derivative_split = 0.25 upstream
+		•	funding children do not pass value further upstream
+	•	Funding edges: funding_split_fraction = 0.02 gives investors a 2 percent royalty share on the funded target
+
 Contribution graph
 
 We store a global directed graph:

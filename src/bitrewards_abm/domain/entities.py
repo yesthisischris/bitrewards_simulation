@@ -6,9 +6,9 @@ from typing import List, Optional
 
 
 class ContributionType(str, Enum):
-    SOFTWARE_CODE = "software_code"
-    DATASET = "dataset"
+    CORE_RESEARCH = "core_research"
     FUNDING = "funding"
+    SUPPORTING = "supporting"
 
 
 @dataclass

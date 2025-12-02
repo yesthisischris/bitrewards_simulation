@@ -144,6 +144,80 @@ def plot_creator_satisfaction_and_churn(timeseries_path: Path, run_id: int, outp
     plt.close(fig)
 
 
+def plot_total_rewards_by_type(summary_path: Path, run_id: int, output_path: Path) -> None:
+    df = load_csv(summary_path)
+    required = {
+        "run_id",
+        "total_reward_core_research",
+        "total_reward_funding",
+        "total_reward_supporting",
+    }
+    missing = required - set(df.columns)
+    if missing:
+        return
+    row = df[df["run_id"] == run_id].copy()
+    if row.empty:
+        return
+    row = row.iloc[0]
+
+    labels = ["core_research", "funding", "supporting"]
+    values = [
+        float(row["total_reward_core_research"]),
+        float(row["total_reward_funding"]),
+        float(row["total_reward_supporting"]),
+    ]
+    total = sum(values)
+    if total <= 0.0:
+        return
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(labels, values)
+    ax.set_xlabel("Contribution type")
+    ax.set_ylabel("Total rewards")
+    ax.set_title(f"Run {run_id}: Total Rewards by Contribution Type")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+def plot_total_rewards_by_role(summary_path: Path, run_id: int, output_path: Path) -> None:
+    df = load_csv(summary_path)
+    required = {
+        "run_id",
+        "total_income_creators",
+        "total_income_investors",
+        "total_income_users",
+    }
+    missing = required - set(df.columns)
+    if missing:
+        return
+    row = df[df["run_id"] == run_id].copy()
+    if row.empty:
+        return
+    row = row.iloc[0]
+
+    labels = ["creators", "investors", "users"]
+    values = [
+        float(row["total_income_creators"]),
+        float(row["total_income_investors"]),
+        float(row["total_income_users"]),
+    ]
+    total = sum(values)
+    if total <= 0.0:
+        return
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(labels, values)
+    ax.set_xlabel("Role")
+    ax.set_ylabel("Total income")
+    ax.set_title(f"Run {run_id}: Total Rewards by Role")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeseries", type=Path, default=Path("data/timeseries.csv"))
@@ -165,6 +239,8 @@ def main() -> None:
     plot_investor_roi_vs_split(args.run_summary, output_dir / "investor_roi_vs_split.png")
     plot_investor_roi_vs_fee_rate(args.run_summary, output_dir / "investor_roi_vs_fee_rate.png")
     plot_creator_satisfaction_and_churn(args.timeseries, args.run_id, output_dir / f"run_{args.run_id}_creator_satisfaction_churn.png")
+    plot_total_rewards_by_type(args.run_summary, args.run_id, output_dir / f"run_{args.run_id}_rewards_by_type.png")
+    plot_total_rewards_by_role(args.run_summary, args.run_id, output_dir / f"run_{args.run_id}_rewards_by_role.png")
 
 
 if __name__ == "__main__":

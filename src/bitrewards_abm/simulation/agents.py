@@ -55,11 +55,13 @@ class CreatorAgent(EconomicAgent):
         )
 
     def infer_contribution_type_from_role(self) -> ContributionType:
-        if self.role == "developer":
-            return ContributionType.SOFTWARE_CODE
-        if self.role == "scientist":
-            return ContributionType.DATASET
-        return ContributionType.SOFTWARE_CODE
+        core_roles = {"developer", "scientist", "engineer", "researcher"}
+        supporting_roles = {"reviewer", "educator", "curator", "moderator", "facilitator"}
+        if self.role in core_roles:
+            return ContributionType.CORE_RESEARCH
+        if self.role in supporting_roles:
+            return ContributionType.SUPPORTING
+        return ContributionType.CORE_RESEARCH
 
     def draw_contribution_quality(self) -> float:
         noise_span = self.parameters.quality_noise_scale
