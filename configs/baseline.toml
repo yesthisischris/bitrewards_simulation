@@ -7,6 +7,7 @@ max_steps = 240
 
 gas_fee_share_rate = 0.005
 tracing_accuracy = 0.8
+tracing_false_positive_rate = 0.05
 
 creator_base_contribution_probability = 0.3
 quality_noise_scale = 0.1
@@ -23,14 +24,19 @@ default_derivative_split = 0.5
 supporting_derivative_split = 0.25
 
 funding_split_fraction = 0.02
-funding_contribution_cost = 10.0
+funding_min_amount = 10.0
+funding_max_amount = 10.0
+funding_royalty_min = 0.02
+funding_royalty_max = 0.02
 investor_max_funding_per_step = 1
 investor_min_target_quality = 0.5
 
 aspiration_income_per_step = 0.02
 satisfaction_logistic_k = 1.5
-satisfaction_churn_threshold = 0.2
-satisfaction_churn_window = 20
+satisfaction_churn_threshold = 0.1
+satisfaction_churn_window = 40
+roi_churn_window = 20
+royalty_batch_interval = 5
 
 [experiment]
 name = "baseline"
