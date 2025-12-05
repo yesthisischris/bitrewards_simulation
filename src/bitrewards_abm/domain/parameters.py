@@ -13,6 +13,7 @@ class SimulationParameters:
     max_steps: int = 200
     gas_fee_share_rate: float = 0.005
     tracing_accuracy: float = 0.8
+    tracing_false_positive_rate: float = 0.05
     creator_base_contribution_probability: float = 0.3
     quality_noise_scale: float = 0.1
     user_usage_probability: float = 0.6

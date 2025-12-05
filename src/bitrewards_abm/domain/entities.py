@@ -26,6 +26,7 @@ class Contribution:
     contribution_type: ContributionType
     quality: float
     parents: List[str] = field(default_factory=list)
+    true_parents: List[str] = field(default_factory=list)
     funding_raised: float = 0.0
     royalty_percent: Optional[float] = None
     usage_count: int = 0

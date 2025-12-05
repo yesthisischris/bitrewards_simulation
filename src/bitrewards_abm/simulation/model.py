@@ -60,6 +60,12 @@ class BitRewardsModel(Model):
             "investor": 0.0,
             "user": 0.0,
         }
+        self.tracing_metrics: Dict[str, int] = {
+            "true_links": 0,
+            "detected_true_links": 0,
+            "false_positive_links": 0,
+            "missed_true_links": 0,
+        }
         self.datacollector = DataCollector(
             model_reporters={
                 "step": lambda m: m.current_step,
@@ -158,9 +164,6 @@ class BitRewardsModel(Model):
         self.distribute_usage_event_fees()
         if self.parameters.royalty_batch_interval > 0 and self.current_step % self.parameters.royalty_batch_interval == 0:
             self._distribute_batched_royalties()
-        for agent in self.agent_by_identifier.values():
-            if isinstance(agent, EconomicAgent):
-                agent.unlock_escrowed_rewards(self.current_step)
         self._flush_pending_payouts_if_due()
         self._decrement_funding_lockups()
         self._update_agent_satisfaction_and_churn()
@@ -175,29 +178,57 @@ class BitRewardsModel(Model):
         parent_identifier: str | None,
     ) -> str:
         identifier = self.next_contribution_identifier()
-        parents: List[str] = []
-        if parent_identifier is not None and parent_identifier in self.contributions:
-            parents.append(parent_identifier)
         contribution = Contribution(
             contribution_id=identifier,
             project_id=None,
             owner_id=creator.unique_id,
             contribution_type=contribution_type,
             quality=quality,
-            parents=parents,
+            parents=[],
+            true_parents=[],
             kind=creator.role,
         )
         self.contributions[identifier] = contribution
         self.contribution_graph.add_contribution_node(identifier)
-        derivative_split = self.parameters.get_derivative_split_for(contribution_type)
-        if derivative_split > 0.0:
-            for parent in parents:
-                if self.random.random() <= self.parameters.tracing_accuracy:
-                    self.contribution_graph.add_parent_child_edge(
-                        parent_id=parent,
-                        child_id=identifier,
-                        split_fraction=derivative_split,
-                    )
+        true_parents: List[str] = []
+        if parent_identifier is not None and parent_identifier in self.contributions:
+            true_parents.append(parent_identifier)
+        contribution.true_parents = true_parents
+        self.tracing_metrics["true_links"] += len(true_parents)
+        if not true_parents:
+            return identifier
+        true_parent_id = true_parents[0]
+        tracing_accuracy = max(0.0, min(1.0, self.parameters.tracing_accuracy))
+        false_positive_rate = max(
+            0.0,
+            min(1.0, getattr(self.parameters, "tracing_false_positive_rate", 0.0)),
+        )
+        edge_parent: str | None = None
+        if self.random.random() < tracing_accuracy:
+            edge_parent = true_parent_id
+            self.tracing_metrics["detected_true_links"] += 1
+        else:
+            self.tracing_metrics["missed_true_links"] += 1
+            if self.random.random() < false_positive_rate:
+                candidates = [
+                    cid
+                    for cid in self.contributions.keys()
+                    if cid not in true_parents and cid != identifier
+                ]
+                if candidates:
+                    edge_parent = self.random.choice(candidates)
+                    self.tracing_metrics["false_positive_links"] += 1
+        if edge_parent is not None:
+            contribution.parents = [edge_parent]
+            royalty_percent = self.parameters.get_derivative_split_for(contribution_type)
+            if royalty_percent > 0.0:
+                edge_type = "supporting" if contribution_type is ContributionType.SUPPORTING else "derivative"
+                self.contribution_graph.add_royalty_edge(
+                    parent_identifier=edge_parent,
+                    child_identifier=identifier,
+                    royalty_percent=royalty_percent,
+                    edge_type=edge_type,
+                )
         return identifier
 
     def register_funding_contribution(
@@ -256,6 +287,7 @@ class BitRewardsModel(Model):
                 parent_identifier=identifier,
                 child_identifier=target_identifier,
                 royalty_percent=royalty_percent if royalty_percent > 0.0 else funding_split,
+                edge_type="funding",
             )
         return identifier
 
