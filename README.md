@@ -1,5 +1,8 @@
 # bitrewards simulation draft design document
 
+ABM v1 (used in the first Kosmos run) is at tag `abm-v1-initial`. main now tracks ABM v2.
+From here on, everything is v2 work.
+
 1. Purpose and scope
 
 We want a Mesa ABM that simulates the BITrewards protocol as described in the BITrewards whitepaper V4.  ￼
