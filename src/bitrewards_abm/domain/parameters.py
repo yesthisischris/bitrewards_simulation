@@ -37,6 +37,32 @@ class SimulationParameters:
     satisfaction_logistic_k: float = 1.5
     satisfaction_churn_threshold: float = 0.15
     satisfaction_churn_window: int = 15
+    treasury_fee_rate: float = 0.0
+    treasury_funding_rate: float = 0.0
+    creator_roi_exit_threshold: float = -0.2
+    investor_roi_exit_threshold: float = -0.2
+    user_roi_exit_threshold: float = -0.2
+    roi_churn_window: int = 10
+    satisfaction_noise_std: float = 0.0
+    creator_arrival_rate: float = 0.0
+    investor_arrival_rate: float = 0.0
+    user_arrival_rate: float = 0.0
+    creator_arrival_roi_sensitivity: float = 0.0
+    investor_arrival_roi_sensitivity: float = 0.0
+    user_arrival_roi_sensitivity: float = 0.0
+    user_mean_usage_rate: float = 1.0
+    usage_shock_std: float = 0.0
+    funding_lockup_period_steps: int = 0
+    payout_lag_steps: int = 0
+    token_initial_supply: float = 0.0
+    token_inflation_rate: float = 0.0
+    token_buyback_burn_rate: float = 0.0
+    min_reputation_for_full_rewards: float = 0.0
+    identity_creation_cost: float = 0.0
+    reputation_gain_per_usage: float = 0.0
+    reputation_penalty_for_churn: float = 0.0
+    reputation_decay_per_step: float = 0.0
+    creator_contribution_cost: float = 0.0
 
     def get_base_royalty_share_for(self, contribution_type: ContributionType) -> float:
         if contribution_type is ContributionType.CORE_RESEARCH:
@@ -56,3 +82,6 @@ class SimulationParameters:
 
     def get_funding_split_for_target_type(self, contribution_type: ContributionType) -> float:
         return self.funding_split_fraction
+
+    def treasury_cut_from_fee(self, fee_amount: float) -> float:
+        return fee_amount * self.treasury_fee_rate

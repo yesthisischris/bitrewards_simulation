@@ -1,8 +1,5 @@
 # bitrewards simulation draft design document
 
-ABM v1 (used in the first Kosmos run) is at tag `abm-v1-initial`. main now tracks ABM v2.
-From here on, everything is v2 work.
-
 1. Purpose and scope
 
 We want a Mesa ABM that simulates the BITrewards protocol as described in the BITrewards whitepaper V4.  ￼
@@ -23,6 +20,19 @@ We explicitly do not simulate blockchain internals. We simulate economic and beh
 
 Time unit: one “step” = one week (or similar consistent unit).
 Model run length: typically 200–500 steps per run, configurable.
+
+## Versioning
+
+- **ABM v1** (agent based model version 1) is the version used for the first Kosmos diagnostic run.  
+  - The code for ABM v1 is tagged as `abm-v1-initial`.
+- **ABM v2** is an evolution of the same model that:
+  - Fixes capital flow issues in the funding mechanism
+  - Grounds churn and entry decisions in realized ROI (return on investment)
+  - Adds stochastic arrivals, capital frictions, and token supply tracking
+  - Aligns the royalty DAG (directed acyclic graph) with the BITrewards whitepaper
+
+The `main` branch now tracks ABM v2 development.  
+The v1 behavior remains reproducible at the `abm-v1-initial` tag.
 
 ## Data outputs
 
