@@ -67,7 +67,7 @@ def _seed_for_run(experiment_config: ExperimentConfig, run_id: int) -> int | Non
 def _run_single_model(
     parameters: SimulationParameters,
     seed: int | None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, dict[str, int]]:
     model = BitRewardsModel(parameters)
     if seed is not None:
         model.random.seed(seed)
@@ -75,7 +75,8 @@ def _run_single_model(
         model.step()
     model_dataframe = model.datacollector.get_model_vars_dataframe()
     model_dataframe = model_dataframe.reset_index()
-    return model_dataframe
+    tracing_metrics = dict(model.tracing_metrics) if hasattr(model, "tracing_metrics") else {}
+    return model_dataframe, tracing_metrics
 
 
 def run_experiments_for_config(
@@ -95,7 +96,7 @@ def run_experiments_for_config(
         for rep in range(experiment_config.runs_per_config):
             parameters = _parameters_for_run(base_parameters, parameter_overrides)
             seed = _seed_for_run(experiment_config, run_id)
-            model_dataframe = _run_single_model(parameters, seed)
+            model_dataframe, tracing_metrics = _run_single_model(parameters, seed)
 
             model_dataframe["run_id"] = run_id
             model_dataframe["rep"] = rep
@@ -123,6 +124,8 @@ def run_experiments_for_config(
             final_row["mean_user_satisfaction_over_run"] = float(
                 model_dataframe["mean_user_satisfaction"].mean()
             )
+            for key, value in tracing_metrics.items():
+                final_row[f"tracing_{key}"] = value
 
             run_summaries.append(final_row)
             run_id += 1

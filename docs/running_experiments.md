@@ -106,47 +106,26 @@ These files follow the documented schema in `docs/data_schema.md`.
 
 ## 5. Visualizations
 
-The `visuals/story_pack.py` script produces plots from the CSV outputs.
+Use `visuals/abm_visuals.py` to generate refreshed plots from `timeseries.csv` and `run_summary.csv`.
 
-### 5.1 Single scenario story
+### 5.1 Single scenario
 
-After running a batch into `data/baseline`, you can generate a story for run 0:
+After running a batch into `data/baseline`, generate charts for run 0:
 
 ```bash
-poetry run python visuals/story_pack.py \
+poetry run python visuals/abm_visuals.py \
   --timeseries data/baseline/timeseries.csv \
   --run-summary data/baseline/run_summary.csv \
   --run-id 0 \
   --output-dir visuals/output_baseline
 ```
 
-This generates:
-- A trajectory plot for contributions, usage, and fees
-- An optional creator wealth histogram (if an agent CSV is provided)
-- Investor ROI vs funding split and vs gas fee rate
-- Creator satisfaction and churn over time
-- Fairness plots for income by role and creator inequality vs reward share
-
-### 5.2 Scenario comparison
-
-If you run multiple configs into separate directories:
-- `data/baseline`
-- `data/low_tracing_accuracy`
-- `data/high_funding_share`
-
-you can generate scenario comparison plots:
-
-```bash
-poetry run python visuals/story_pack.py \
-  --scenario-dir data/baseline \
-  --scenario-dir data/low_tracing_accuracy \
-  --scenario-dir data/high_funding_share \
-  --output-dir visuals/output_comparison
-```
-
-This reads each `run_summary.csv`, attaches a scenario label, and produces bar charts that compare:
-- Average investor ROI by scenario
-- Average creator satisfaction by scenario
-- Average creator churn count by scenario
-
-These plots give quick answers to how outcomes differ across configs.
+This produces:
+- Active agents by role
+- Contribution mix (core, supporting, funding)
+- Rewards by contribution type and role income shares
+- Usage per step
+- Satisfaction and churn by role
+- Investor ROI distribution across runs
+- Tracing diagnostics (if tracing metrics are present in run_summary)
+- Funding amount and royalty parameter distributions

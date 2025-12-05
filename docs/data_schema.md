@@ -105,11 +105,18 @@ These columns are constant within a run and repeated on each row for convenience
 | `gas_fee_share_rate` | float | Fraction of gross usage value routed into the reward pool. |
 | `funding_split_fraction` | float | Default royalty split allocated to funding contributions on their targets. |
 | `tracing_accuracy` | float | Probability that an intended parent edge is recorded in the DAG. |
+| `tracing_false_positive_rate` | float | Probability that, when tracing misses a true parent, it attaches a wrong parent. |
 | `default_derivative_split` | float | Baseline upstream royalty fraction for core research children. |
 | `supporting_derivative_split` | float | Upstream fraction for supporting contributions. |
 | `core_research_base_royalty_share` | float | Base royalty multiplier for core research contributions. |
 | `funding_base_royalty_share` | float | Base royalty multiplier for funding contributions. |
 | `supporting_base_royalty_share` | float | Base royalty multiplier for supporting contributions. |
+| `funding_min_amount` | float | Minimum sampled funding amount. |
+| `funding_max_amount` | float | Maximum sampled funding amount. |
+| `funding_royalty_min` | float | Minimum sampled funding royalty percent. |
+| `funding_royalty_max` | float | Maximum sampled funding royalty percent. |
+| `royalty_accrual_per_usage` | float | Royalty basis added per usage event. |
+| `royalty_batch_interval` | int | Steps between royalty batch distributions. |
 | `aspiration_income_per_step` | float | Target income per step for satisfaction updates. |
 | `satisfaction_logistic_k` | float | Slope of the logistic satisfaction response to income. |
 | `satisfaction_churn_threshold` | float | Satisfaction level below which an agent accumulates churn streak. |
@@ -132,6 +139,10 @@ Additional run-level columns:
 | `mean_creator_satisfaction_over_run` | float | Average of `mean_creator_satisfaction` over steps in this run. |
 | `mean_investor_satisfaction_over_run` | float | Average of `mean_investor_satisfaction` over steps. |
 | `mean_user_satisfaction_over_run` | float | Average of `mean_user_satisfaction` over steps. |
+| `tracing_true_links` | int | Count of true ancestry links in the run. |
+| `tracing_detected_true_links` | int | Count of true ancestry links that were detected and attached. |
+| `tracing_false_positive_links` | int | Count of edges attached to wrong parents. |
+| `tracing_missed_true_links` | int | Count of true ancestry links with no observed parent edge. |
 | `scenario_name` | str | Scenario label from the experiment config. |
 
 Downstream tools should treat `run_summary.csv` as the primary high-level view and consult `timeseries.csv` when temporal dynamics matter.

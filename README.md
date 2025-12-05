@@ -40,7 +40,7 @@ This repository is designed so an AI scientist (for example Kosmos) can analyze 
 - `configs/` holds TOML configs for named scenarios (`baseline`, `low_tracing_accuracy`, `high_funding_share`, `high_investor_share`).
 - `data/reference/<scenario_name>/` is the layout for reference datasets (`timeseries.csv`, `run_summary.csv`) generated from those configs.
 - `docs/data_schema.md` documents the stable CSV schema.
-- `visuals/kosmos_reference.py` generates a small dashboard (active agents, satisfaction/churn, role reward shares) for a chosen scenario.
+- `visuals/abm_visuals.py` generates refreshed charts aligned with the current model (role mix, rewards, funding, tracing).
 
 ⸻
 
