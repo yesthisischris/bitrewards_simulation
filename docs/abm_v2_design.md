@@ -562,6 +562,87 @@ This makes collapse for creators and investors an emergent property of ROI paths
     - On flush, each `(contribution_id, amount)` is paid via `pay_contribution_owner`.
     - ROI accounting and reward metrics update at flush time, not at event time.
 
+### 3.5 Token supply and holding times (PR 5)
+
+The v2 ABM adds an explicit token layer on top of real-economy capital.
+
+**State**
+
+- `TokenEconomyState`:
+  - `total_supply`: total issued tokens
+  - `circulating_supply`: tokens held by agents or the treasury
+  - `staked_supply`: reserved for future staking mechanics (0 in v2)
+  - `burned_supply`: cumulative burned tokens
+  - `mean_holding_time_steps`: approximate mean holding time across agents
+
+**Initialization**
+
+- Let `W0` be `initial_total_wealth` (sum of agent wealth, budgets, and treasury at t=0).
+- If `token_initial_supply > 0`, then:
+
+> total_supply_0 = token_initial_supply
+
+- Otherwise:
+
+> total_supply_0 = W0
+
+- `circulating_supply_0` is set equal to `total_supply_0`.
+
+**Fee minting**
+
+For each usage event with gross value `V`:
+
+- The model computes
+
+> total_fee = V × gas_fee_share_rate × base_share
+
+- `total_fee` is treated as newly minted capital and tokens:
+  - `cumulative_external_inflows` increases by `total_fee`
+  - `token_total_supply` and `token_circulating_supply` increase by `total_fee`
+  - `treasury_fee_rate × total_fee` goes to the treasury; the remainder is allocated via the DAG as royalties
+
+**Inflation and burn**
+
+At the start of each step t:
+
+- Inflation:
+
+> minted_t = token_inflation_rate × total_supply_{t-1}
+
+  - `total_supply_t = total_supply_{t-1} + minted_t`
+  - `circulating_supply_t = circulating_supply_{t-1} + minted_t`
+  - Minted tokens are credited to the treasury and counted as external inflows.
+
+- Buyback and burn:
+
+> burn_t = token_buyback_burn_rate × treasury_balance_t
+
+  - `treasury_balance_t` decreases by `burn_t`
+  - `total_supply_t` decreases by `burn_t`
+  - `circulating_supply_t` decreases by `burn_t` (clamped at zero)
+  - `burned_supply` increases by `burn_t`
+
+With `token_inflation_rate = 0` and `token_buyback_burn_rate = 0`, token supply is only affected by fees.
+
+**Holding times**
+
+Each `EconomicAgent` tracks:
+
+- `holding_time_ema`: an exponential moving average of time between balance changes
+- `last_holding_update_step`: last step when holding_time_ema was updated
+- `had_balance_change_this_step`: set to `True` whenever `record_income` or `record_cost` is called
+
+At the end of each step:
+
+- For each agent with `had_balance_change_this_step`:
+
+> delta = current_step - last_holding_update_step  
+> holding_time_ema = (1 - alpha) × holding_time_ema + alpha × delta
+
+- `TokenEconomyState.mean_holding_time_steps` is the simple mean of `holding_time_ema` over agents with positive wealth.
+
+This provides a low-cost summary of token velocity without modeling every individual transfer.
+
 ---
 
 ## 4. `src/bitrewards_abm/domain/entities.py`
