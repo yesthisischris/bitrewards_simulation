@@ -6,7 +6,8 @@ This model currently corresponds to the BITrewards whitepaper V4 (docs/whitepape
 
 - Agents: creators, investors, users
 - Structure: contribution DAG with edge splits for royalties and funding
-- Economics: fees from usage, funding principal transfers, treasury cut, reputation gates, lockups, payout lags, token supply tracking
+- Representation: contributions are Bitcoin ordinal NFTs; IDs map to inscribed metadata
+- Economics: fees from usage, funding principal transfers, treasury cut, reputation gates, lockups, payout lags; value is tracked in BTC terms (no native token supply)
 - Objectives: evaluate sustainability, fairness, investor ROI, and failure modes
 
 ## Architecture
@@ -19,27 +20,26 @@ This model currently corresponds to the BITrewards whitepaper V4 (docs/whitepape
 
 ## Core dynamics
 
-- Usage and fees: usage events mint `total_fee = gross_value * gas_fee_share_rate * base_share(type)`; treasury takes `treasury_fee_rate * total_fee`; remaining pool flows through the DAG via edge splits.
-- Funding: investors pay `funding_contribution_cost`; creator receives `(1 - treasury_funding_rate)` share, treasury receives the rest; funding edges add fixed splits on targets.
-- Reputation and identity: payouts scale by `max(0, reputation / min_reputation_for_full_rewards)`; gains on payout, decay per step, penalty on churn; optional `identity_creation_cost` credited to treasury.
-- Satisfaction and churn: agents track ROI from cumulative income and cost; creators and investors churn when ROI is below threshold and low-satisfaction streak exceeds window; users use aspiration-based satisfaction with noise.
-- Arrivals and usage volume: Poisson arrivals per role with ROI-sensitive rates; users activate with `user_usage_probability`, then draw `Poisson(user_mean_usage_rate)` events with optional log-normal shock.
-- Capital frictions: funding lockups reroute locked funding shares to treasury; payout lag buffers DAG payouts and flushes every `payout_lag_steps`.
-- Token layer: fee minting increases supply; inflation adds `token_inflation_rate * total_supply`; buybacks burn `token_buyback_burn_rate * treasury_balance`; holding times tracked via balance-change EMAs.
+- Usage and fees: usage events mint `total_fee = gross_value * gas_fee_share_rate * base_share(type)`; treasury takes `treasury_fee_rate * total_fee`; remaining pool flows through the DAG via edge splits. Optional `royalty_accrual_per_usage` and `royalty_batch_interval` buffer payouts.
+- Funding: investors pick a target above `investor_min_target_quality`, spend a uniform draw in `[funding_min_amount, funding_max_amount]` (capped by budget), and transfer it to the creator minus `treasury_funding_rate`. Funding contributions can lock rewards for `funding_lockup_period_steps` and attach funding edges using sampled `funding_royalty_min`/`funding_royalty_max` (fallback to `funding_split_fraction`).
+- Tracing and graph edges: creator contributions attach to parents weighted by quality; `tracing_accuracy` and `tracing_false_positive_rate` decide whether the observed edge is correct or misattributed. Splits come from derivative or supporting defaults on the `ContributionGraph`.
+- Satisfaction and churn: satisfaction is a logistic transform of ROI (creators, investors) or income ratio (users) with optional noise. Creators and investors churn when ROI stays below thresholds for `roi_churn_window` steps; users churn when satisfaction stays below `satisfaction_churn_threshold` for `satisfaction_churn_window` steps.
+- Arrivals and usage volume: Poisson arrivals per role scaled by ROI sensitivity; active users trigger usage with `user_usage_probability`, emit `Poisson(user_mean_usage_rate)` events with optional log-normal shocks, and sample contributions weighted by quality.
+- Reputation and identity: rewards are gated by `min_reputation_for_full_rewards`, with gains per payout, decay per step, and penalties on churn. `identity_creation_cost` is charged to new arrivals.
+- Treasury and frictions: gas and royalty payouts flow as BTC; treasury cuts apply per step; payout lag buffers payments for `payout_lag_steps`; funding lockups escrow rewards until release.
+- Simulation-only churn: exits can be disabled by raising ROI/satisfaction thresholds or windows when strict whitepaper fidelity is desired.
 
 ## Parameter highlights
 
 Common fields from `SimulationParameters`:
-- Population and horizon: `creator_count`, `investor_count`, `user_count`, `max_steps`
-- Behavior and usage: `creator_base_contribution_probability`, `quality_noise_scale`, `user_usage_probability`, `user_mean_usage_rate`, `base_gross_value`, `usage_shock_std`, `tracing_accuracy`
-- Royalty structure: `gas_fee_share_rate`, `core_research_base_royalty_share`, `supporting_base_royalty_share`, `funding_base_royalty_share`, `default_derivative_split`, `supporting_derivative_split`, `funding_split_fraction`, `funding_contribution_cost`
-- Funding behavior: `investor_max_funding_per_step`, `investor_min_target_quality`
-- Treasury: `treasury_fee_rate`, `treasury_funding_rate`
-- Satisfaction and churn: `aspiration_income_per_step`, `satisfaction_logistic_k`, `satisfaction_churn_threshold`, `satisfaction_churn_window`, `creator_roi_exit_threshold`, `investor_roi_exit_threshold`, `user_roi_exit_threshold`, `roi_churn_window`, `satisfaction_noise_std`
-- Arrivals: `creator_arrival_rate`, `investor_arrival_rate`, `user_arrival_rate`, ROI sensitivities per role
-- Frictions: `funding_lockup_period_steps`, `payout_lag_steps`, `creator_contribution_cost`
-- Token: `token_initial_supply`, `token_inflation_rate`, `token_buyback_burn_rate`
-- Reputation and identity: `min_reputation_for_full_rewards`, `reputation_gain_per_usage`, `reputation_decay_per_step`, `reputation_penalty_for_churn`, `identity_creation_cost`
+- Population and horizon: `creator_count`, `investor_count`, `user_count`, `supporting_creator_fraction`, `min_creator_skill`, `max_creator_skill`, `max_steps`
+- Behavior and usage: `creator_base_contribution_probability`, `quality_noise_scale`, `user_usage_probability`, `user_mean_usage_rate`, `base_gross_value`, `usage_shock_std`
+- Graph and tracing: `gas_fee_share_rate`, `tracing_accuracy`, `tracing_false_positive_rate`, `default_derivative_split`, `supporting_derivative_split`, `core_research_base_royalty_share`, `funding_base_royalty_share`, `supporting_base_royalty_share`, `royalty_accrual_per_usage`, `royalty_batch_interval`
+- Funding: `initial_investor_budget`, `funding_min_amount`, `funding_max_amount`, `funding_royalty_min`, `funding_royalty_max`, `funding_split_fraction`, `investor_max_funding_per_step`, `investor_min_target_quality`, `funding_lockup_period_steps`
+- Satisfaction and churn: `initial_agent_satisfaction`, `aspiration_income_per_step`, `satisfaction_logistic_k`, `satisfaction_churn_threshold`, `satisfaction_churn_window`, `creator_roi_exit_threshold`, `investor_roi_exit_threshold`, `user_roi_exit_threshold`, `roi_churn_window`, `satisfaction_noise_std`, `creator_contribution_cost`
+- Arrivals and identity: `creator_arrival_rate`, `investor_arrival_rate`, `user_arrival_rate`, ROI sensitivities per role, `identity_creation_cost`
+- Reputation: `min_reputation_for_full_rewards`, `reputation_gain_per_usage`, `reputation_decay_per_step`, `reputation_penalty_for_churn`
+- Treasury and payouts: `treasury_fee_rate`, `treasury_funding_rate`, `payout_lag_steps`
 
 ## Instrumentation
 

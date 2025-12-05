@@ -62,9 +62,6 @@ class SimulationParameters:
     usage_shock_std: float = 0.0
     funding_lockup_period_steps: int = 0
     payout_lag_steps: int = 0
-    token_initial_supply: float = 0.0
-    token_inflation_rate: float = 0.0
-    token_buyback_burn_rate: float = 0.0
     min_reputation_for_full_rewards: float = 0.0
     identity_creation_cost: float = 0.0
     reputation_gain_per_usage: float = 0.0

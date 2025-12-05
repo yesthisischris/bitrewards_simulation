@@ -22,9 +22,6 @@ class EconomicAgent(Agent):
         self.cumulative_income = 0.0
         self.cumulative_cost = 0.0
         self.roi_history: List[float] = []
-        self.holding_time_ema: float = 0.0
-        self.last_holding_update_step: int = 0
-        self.had_balance_change_this_step: bool = False
         self.reputation_score: float = 1.0
         self.identity_weight: float = 1.0
         self.escrowed_rewards: List[dict[str, float | int | str]] = []
@@ -46,14 +43,12 @@ class EconomicAgent(Agent):
         self.wealth += amount
         self.cumulative_income += amount
         self.roi_history.append(self.current_roi)
-        self.had_balance_change_this_step = True
 
     def record_cost(self, amount: float) -> None:
         if amount <= 0.0:
             return
         self.cumulative_cost += amount
         self.roi_history.append(self.current_roi)
-        self.had_balance_change_this_step = True
 
     def receive_income(self, amount: float) -> None:
         self.record_income(amount)

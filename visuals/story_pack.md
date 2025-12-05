@@ -1,10 +1,10 @@
 # Story pack for the current BITrewards ABM
 
-Use these visuals to narrate the present model: role mix, funding economics, gas vs royalties, tracing quality, ROI and churn, token and treasury.
+Use these visuals to narrate the present model: role mix, funding economics, gas vs royalties, tracing quality, ROI and churn, and treasury flows.
 
 ## System and roles
 
-**Protocol map** — Creators (core and supporting), investors, users feeding usage into the observed DAG; treasury cut and token supply bubble; payout lags and funding lockups.
+**Protocol map** — Creators (core and supporting), investors, users feeding usage into the observed DAG of Bitcoin ordinal NFTs; treasury cut, payout lags, and funding lockups.
 
 **Role mix over time** — Stacked area of active creators split by core/supporting, plus investors and users; overlay contribution counts by type/kind.
 
@@ -26,9 +26,7 @@ Use these visuals to narrate the present model: role mix, funding economics, gas
 
 **Observed vs true DAG snippet** — A sampled contribution showing true_parents vs observed parent and splits.
 
-## Token and treasury
-
-**Token supply and holding** — Stacked area of circulating vs burned; line for total supply and mean_token_holding_time_steps.
+## Treasury
 
 **Treasury flows** — Bars for cumulative inflows/outflows; line for balance; optional split by fee vs identity/funding cuts.
 

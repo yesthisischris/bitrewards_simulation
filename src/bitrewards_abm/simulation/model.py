@@ -6,7 +6,7 @@ from typing import Dict, List, Type
 from mesa import Model
 from mesa.datacollection import DataCollector
 
-from bitrewards_abm.domain.entities import Contribution, ContributionType, UsageEvent, TreasuryState, TokenEconomyState
+from bitrewards_abm.domain.entities import Contribution, ContributionType, UsageEvent, TreasuryState
 from bitrewards_abm.domain.parameters import SimulationParameters
 from bitrewards_abm.infrastructure.graph_store import ContributionGraph
 from bitrewards_abm.simulation.agents import CreatorAgent, EconomicAgent, InvestorAgent, UserAgent
@@ -35,14 +35,6 @@ class BitRewardsModel(Model):
         self.treasury = TreasuryState()
         self.total_funding_invested = 0.0
         self.initial_total_wealth = 0.0
-        self.cumulative_external_inflows = 0.0
-        self.token_state = TokenEconomyState(
-            total_supply=0.0,
-            circulating_supply=0.0,
-            staked_supply=0.0,
-            burned_supply=0.0,
-            mean_holding_time_steps=0.0,
-        )
         self.creators: List[CreatorAgent] = []
         self.investors: List[InvestorAgent] = []
         self.users: List[UserAgent] = []
@@ -105,10 +97,6 @@ class BitRewardsModel(Model):
                 "new_investors_this_step": new_investors_this_step,
                 "new_users_this_step": new_users_this_step,
                 "locked_funding_positions": locked_funding_positions,
-                "token_total_supply": token_total_supply,
-                "token_circulating_supply": token_circulating_supply,
-                "token_burned_supply": token_burned_supply,
-                "mean_token_holding_time_steps": mean_token_holding_time_steps,
             },
             agent_reporters={
                 "wealth": "wealth",
@@ -119,7 +107,6 @@ class BitRewardsModel(Model):
         )
         self.create_initial_population()
         self.initial_total_wealth = self._compute_total_wealth()
-        self._initialize_token_state()
 
     def _agent_role_label(self, agent: EconomicAgent) -> str:
         if isinstance(agent, CreatorAgent):
@@ -166,19 +153,6 @@ class BitRewardsModel(Model):
         total += self.treasury.balance
         return total
 
-    def _initialize_token_state(self) -> None:
-        if self.parameters.token_initial_supply > 0.0:
-            initial_supply = self.parameters.token_initial_supply
-        else:
-            initial_supply = self.initial_total_wealth
-        self.token_state = TokenEconomyState(
-            total_supply=initial_supply,
-            circulating_supply=initial_supply,
-            staked_supply=0.0,
-            burned_supply=0.0,
-            mean_holding_time_steps=0.0,
-        )
-
     def reset_step_internal_state(self) -> None:
         self.reset_agents_for_new_step()
         self.pending_usage_events.clear()
@@ -194,7 +168,6 @@ class BitRewardsModel(Model):
 
     def step(self) -> None:
         self.current_step += 1
-        self._apply_token_inflation_and_burn()
         self.reset_step_internal_state()
         self.spawn_new_agents()
         self.run_phase_for_agent_type(CreatorAgent)
@@ -207,7 +180,6 @@ class BitRewardsModel(Model):
         self._flush_pending_payouts_if_due()
         self._decrement_funding_lockups(unlock=False)
         self._update_agent_satisfaction_and_churn()
-        self._update_token_holding_times()
         self.datacollector.collect(self)
 
     def register_creator_contribution(
@@ -485,7 +457,6 @@ class BitRewardsModel(Model):
             if identity_cost > 0.0:
                 creator.cumulative_cost += identity_cost
                 creator.wealth -= identity_cost
-                creator.had_balance_change_this_step = True
                 self.treasury.balance += identity_cost
                 self.treasury.cumulative_inflows += identity_cost
 
@@ -510,7 +481,6 @@ class BitRewardsModel(Model):
             if identity_cost > 0.0:
                 investor.cumulative_cost += identity_cost
                 investor.wealth -= identity_cost
-                investor.had_balance_change_this_step = True
                 self.treasury.balance += identity_cost
                 self.treasury.cumulative_inflows += identity_cost
 
@@ -534,31 +504,8 @@ class BitRewardsModel(Model):
             if identity_cost > 0.0:
                 user.cumulative_cost += identity_cost
                 user.wealth -= identity_cost
-                user.had_balance_change_this_step = True
                 self.treasury.balance += identity_cost
                 self.treasury.cumulative_inflows += identity_cost
-
-    def _apply_token_inflation_and_burn(self) -> None:
-        inflation_rate = self.parameters.token_inflation_rate
-        if inflation_rate > 0.0:
-            minted = inflation_rate * self.token_state.total_supply
-            if minted > 0.0:
-                self.token_state.total_supply += minted
-                self.token_state.circulating_supply += minted
-                self.treasury.balance += minted
-                self.treasury.cumulative_inflows += minted
-                self.cumulative_external_inflows += minted
-        burn_rate = self.parameters.token_buyback_burn_rate
-        if burn_rate > 0.0 and self.treasury.balance > 0.0:
-            burn = burn_rate * self.treasury.balance
-            if burn > 0.0:
-                self.treasury.balance -= burn
-                self.treasury.cumulative_outflows += burn
-                self.token_state.total_supply -= burn
-                self.token_state.circulating_supply = max(
-                    0.0, self.token_state.circulating_supply - burn
-                )
-                self.token_state.burned_supply += burn
 
     def _unlock_all_escrows(self) -> None:
         for agent in self.agent_by_identifier.values():
@@ -734,9 +681,6 @@ class BitRewardsModel(Model):
             return
         self.total_fee_distributed_this_step += total_fee
         self.cumulative_fee_distributed += total_fee
-        self.cumulative_external_inflows += total_fee
-        self.token_state.total_supply += total_fee
-        self.token_state.circulating_supply += total_fee
         treasury_cut = total_fee * self.parameters.treasury_fee_rate
         if treasury_cut > 0.0:
             self.treasury.balance += treasury_cut
@@ -792,9 +736,6 @@ class BitRewardsModel(Model):
             )
             contribution = self.contributions[root_identifier]
             contribution.accrued_royalty_value = 0.0
-            self.cumulative_external_inflows += total_value
-            self.token_state.total_supply += total_value
-            self.token_state.circulating_supply += total_value
 
     def _update_agent_satisfaction_and_churn(self) -> None:
         epsilon = 1e-6
@@ -845,33 +786,6 @@ class BitRewardsModel(Model):
                     agent.is_active = False
             if was_active and not agent.is_active and rep_penalty > 0.0:
                 agent.reputation_score = max(0.0, agent.reputation_score - rep_penalty)
-
-    def _update_token_holding_times(self) -> None:
-        alpha = 0.1
-        for agent in self.agent_by_identifier.values():
-            if not isinstance(agent, EconomicAgent):
-                continue
-            if not getattr(agent, "had_balance_change_this_step", False):
-                continue
-            delta = self.current_step - getattr(agent, "last_holding_update_step", 0)
-            if delta > 0:
-                previous = getattr(agent, "holding_time_ema", 0.0)
-                agent.holding_time_ema = (1.0 - alpha) * previous + alpha * float(delta)
-                agent.last_holding_update_step = self.current_step
-            agent.had_balance_change_this_step = False
-        total = 0.0
-        count = 0
-        for agent in self.agent_by_identifier.values():
-            if not isinstance(agent, EconomicAgent):
-                continue
-            if getattr(agent, "wealth", 0.0) <= 0.0:
-                continue
-            ht = getattr(agent, "holding_time_ema", 0.0)
-            if ht <= 0.0:
-                continue
-            total += ht
-            count += 1
-        self.token_state.mean_holding_time_steps = (total / count) if count > 0 else 0.0
 
     def _handle_own_share_with_frictions(
         self,
@@ -1172,22 +1086,6 @@ def total_funding_invested(model: BitRewardsModel) -> float:
 
 def total_wealth(model: BitRewardsModel) -> float:
     return model._compute_total_wealth()
-
-
-def token_total_supply(model: BitRewardsModel) -> float:
-    return model.token_state.total_supply
-
-
-def token_circulating_supply(model: BitRewardsModel) -> float:
-    return model.token_state.circulating_supply
-
-
-def token_burned_supply(model: BitRewardsModel) -> float:
-    return model.token_state.burned_supply
-
-
-def mean_token_holding_time_steps(model: BitRewardsModel) -> float:
-    return model.token_state.mean_holding_time_steps
 
 
 def new_creators_this_step(model: BitRewardsModel) -> int:

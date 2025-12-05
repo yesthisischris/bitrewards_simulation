@@ -11,7 +11,8 @@ Use this condensed set of docs to get up to speed fast.
 
 ```bash
 poetry install
-poetry run python -m bitrewards_abm.run_simulation --config configs/baseline.toml --steps 100 --seed 42
+poetry run pytest
+poetry run python -m bitrewards_abm.run_simulation --config configs/baseline.toml --steps 200 --seed 42
 ```
 
 Batch example:

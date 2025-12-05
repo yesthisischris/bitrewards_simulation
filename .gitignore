@@ -37,6 +37,9 @@ poetry.lock.bak
 # Generated visuals
 data/reference/
 visuals/output/*
+visuals/output_*/
+visuals/output*/
 visuals/reference*/
 visuals/generated/
+visuals/**/*.png
 artifacts/

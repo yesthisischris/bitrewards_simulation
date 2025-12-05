@@ -48,12 +48,3 @@ class TreasuryState:
     balance: float = 0.0
     cumulative_inflows: float = 0.0
     cumulative_outflows: float = 0.0
-
-
-@dataclass
-class TokenEconomyState:
-    total_supply: float = 0.0
-    circulating_supply: float = 0.0
-    staked_supply: float = 0.0
-    burned_supply: float = 0.0
-    mean_holding_time_steps: float = 0.0
