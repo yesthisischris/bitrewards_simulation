@@ -180,6 +180,7 @@ class BitRewardsModel(Model):
             contribution_type=contribution_type,
             quality=quality,
             parents=parents,
+            kind=creator.role,
         )
         self.contributions[identifier] = contribution
         self.contribution_graph.add_contribution_node(identifier)
@@ -211,6 +212,7 @@ class BitRewardsModel(Model):
             contribution_type=ContributionType.FUNDING,
             quality=target_contribution.quality,
             parents=parents,
+            kind="funding",
         )
         lockup_steps = max(0, self.parameters.funding_lockup_period_steps)
         contribution.lockup_remaining_steps = lockup_steps
@@ -267,10 +269,26 @@ class BitRewardsModel(Model):
         self.next_contribution_index += 1
         return identifier
 
+    def _sample_creator_role(self) -> str:
+        supporting_fraction = getattr(self.parameters, "supporting_creator_fraction", 0.0)
+        if supporting_fraction < 0.0:
+            supporting_fraction = 0.0
+        elif supporting_fraction > 1.0:
+            supporting_fraction = 1.0
+        is_supporting = self.random.random() < supporting_fraction
+        if is_supporting and CreatorAgent.SUPPORTING_ROLES:
+            roles = tuple(CreatorAgent.SUPPORTING_ROLES)
+        else:
+            roles = tuple(CreatorAgent.CORE_ROLES)
+        if not roles:
+            return "developer"
+        index = self.random.randrange(len(roles))
+        return roles[index]
+
     def create_initial_population(self) -> None:
         identifier = 0
         for _ in range(self.parameters.creator_count):
-            role = "developer"
+            role = self._sample_creator_role()
             skill = self.random.uniform(
                 self.parameters.min_creator_skill,
                 self.parameters.max_creator_skill,
@@ -357,7 +375,7 @@ class BitRewardsModel(Model):
         )
         num_creators = self._sample_poisson(creator_lambda)
         for _ in range(num_creators):
-            role = "developer"
+            role = self._sample_creator_role()
             skill = self.random.uniform(
                 self.parameters.min_creator_skill,
                 self.parameters.max_creator_skill,

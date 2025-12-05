@@ -59,6 +59,9 @@ class EconomicAgent(Agent):
 
 
 class CreatorAgent(EconomicAgent):
+    CORE_ROLES = {"developer", "scientist", "engineer", "researcher"}
+    SUPPORTING_ROLES = {"reviewer", "educator", "curator", "moderator", "facilitator"}
+
     def __init__(self, unique_id: int, model, parameters: SimulationParameters, role: str, skill: float) -> None:
         super().__init__(unique_id, model, parameters)
         self.role = role
@@ -86,11 +89,9 @@ class CreatorAgent(EconomicAgent):
         )
 
     def infer_contribution_type_from_role(self) -> ContributionType:
-        core_roles = {"developer", "scientist", "engineer", "researcher"}
-        supporting_roles = {"reviewer", "educator", "curator", "moderator", "facilitator"}
-        if self.role in core_roles:
+        if self.role in self.CORE_ROLES:
             return ContributionType.CORE_RESEARCH
-        if self.role in supporting_roles:
+        if self.role in self.SUPPORTING_ROLES:
             return ContributionType.SUPPORTING
         return ContributionType.CORE_RESEARCH
 

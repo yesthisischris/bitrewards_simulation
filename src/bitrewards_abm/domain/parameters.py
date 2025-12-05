@@ -21,6 +21,7 @@ class SimulationParameters:
     max_creator_skill: float = 0.9
     initial_investor_budget: float = 100.0
     initial_agent_satisfaction: float = 1.0
+    supporting_creator_fraction: float = 0.3
 
     default_derivative_split: float = 0.5
     supporting_derivative_split: float = 0.25
