@@ -23,7 +23,6 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry]
 package-mode = true
 packages = [
-    { include = "bitrewards_simulation", from = "src" },
     { include = "bitrewards_abm", from = "src" }
 ]
 
