@@ -977,24 +977,36 @@ def total_income_users(model: BitRewardsModel) -> float:
 
 
 def role_income_share_creators(model: BitRewardsModel) -> float:
-    total_fee = model.cumulative_fee_distributed
-    if total_fee <= 0.0:
+    total_income = (
+        total_income_creators(model)
+        + total_income_investors(model)
+        + total_income_users(model)
+    )
+    if total_income <= 0.0:
         return 0.0
-    return total_income_creators(model) / total_fee
+    return total_income_creators(model) / total_income
 
 
 def role_income_share_investors(model: BitRewardsModel) -> float:
-    total_fee = model.cumulative_fee_distributed
-    if total_fee <= 0.0:
+    total_income = (
+        total_income_creators(model)
+        + total_income_investors(model)
+        + total_income_users(model)
+    )
+    if total_income <= 0.0:
         return 0.0
-    return total_income_investors(model) / total_fee
+    return total_income_investors(model) / total_income
 
 
 def role_income_share_users(model: BitRewardsModel) -> float:
-    total_fee = model.cumulative_fee_distributed
-    if total_fee <= 0.0:
+    total_income = (
+        total_income_creators(model)
+        + total_income_investors(model)
+        + total_income_users(model)
+    )
+    if total_income <= 0.0:
         return 0.0
-    return total_income_users(model) / total_fee
+    return total_income_users(model) / total_income
 
 
 def treasury_balance(model: BitRewardsModel) -> float:
