@@ -32,6 +32,7 @@ class Contribution:
     lockup_remaining_steps: int = 0
     is_performance_verified: bool = False
     kind: Optional[str] = None
+    accrued_royalty_value: float = 0.0
 
 
 @dataclass

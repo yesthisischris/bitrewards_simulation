@@ -22,6 +22,12 @@ class SimulationParameters:
     initial_investor_budget: float = 100.0
     initial_agent_satisfaction: float = 1.0
     supporting_creator_fraction: float = 0.3
+    funding_royalty_min: float = 0.01
+    funding_royalty_max: float = 0.03
+    funding_min_amount: float = 5.0
+    funding_max_amount: float = 50.0
+    royalty_accrual_per_usage: float = 1.0
+    royalty_batch_interval: int = 30
 
     default_derivative_split: float = 0.5
     supporting_derivative_split: float = 0.25

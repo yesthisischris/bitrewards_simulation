@@ -15,6 +15,14 @@ class ContributionGraph:
     def add_parent_child_edge(self, parent_id: str, child_id: str, split_fraction: float, edge_type: str = "derivative") -> None:
         self.graph.add_edge(parent_id, child_id, split=split_fraction, edge_type=edge_type)
 
+    def add_royalty_edge(self, parent_identifier: str, child_identifier: str, royalty_percent: float) -> None:
+        self.add_parent_child_edge(
+            parent_id=parent_identifier,
+            child_id=child_identifier,
+            split_fraction=royalty_percent,
+            edge_type="funding",
+        )
+
     def contribution_exists(self, contribution_id: str) -> bool:
         return contribution_id in self.graph.nodes
 

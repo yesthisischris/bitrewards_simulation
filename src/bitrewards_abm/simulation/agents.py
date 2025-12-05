@@ -27,6 +27,7 @@ class EconomicAgent(Agent):
         self.had_balance_change_this_step: bool = False
         self.reputation_score: float = 1.0
         self.identity_weight: float = 1.0
+        self.escrowed_rewards: List[dict[str, float | int | str]] = []
 
     def reset_step_state(self) -> None:
         self.current_income = 0.0
@@ -56,6 +57,21 @@ class EconomicAgent(Agent):
 
     def receive_income(self, amount: float) -> None:
         self.record_income(amount)
+
+    def unlock_escrowed_rewards(self, current_step: int) -> None:
+        if not self.escrowed_rewards:
+            return
+        remaining: List[dict[str, float | int | str]] = []
+        for entry in self.escrowed_rewards:
+            release_step = int(entry.get("release_step", 0))
+            if release_step < 0:
+                contribution_id = str(entry.get("contribution_id", ""))
+                amount = float(entry.get("amount", 0.0))
+                if contribution_id:
+                    self.model._schedule_payout(contribution_id, amount)
+            else:
+                remaining.append(entry)
+        self.escrowed_rewards = remaining
 
 
 class CreatorAgent(EconomicAgent):
@@ -118,9 +134,9 @@ class InvestorAgent(EconomicAgent):
         max_per_step = self.parameters.investor_max_funding_per_step
         if max_per_step <= 0:
             return
-        cost = self.parameters.funding_contribution_cost
+        min_amount = self.parameters.funding_min_amount
         for _ in range(max_per_step):
-            if self.budget < cost:
+            if self.budget < min_amount:
                 break
             target_identifier = self.model.select_contribution_for_funding()
             if target_identifier is None:
@@ -131,9 +147,6 @@ class InvestorAgent(EconomicAgent):
             )
             if funding_identifier is None:
                 break
-            self.budget -= cost
-            self.total_invested += cost
-            self.record_cost(cost)
             self.funding_contribution_identifiers.add(funding_identifier)
 
 

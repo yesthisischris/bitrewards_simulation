@@ -25,6 +25,10 @@ def build_parameters_for_reward_tests(
         supporting_base_royalty_share=1.0,
         funding_base_royalty_share=1.0,
         funding_split_fraction=funding_split,
+        funding_royalty_min=funding_split,
+        funding_royalty_max=funding_split,
+        funding_min_amount=1.0,
+        funding_max_amount=1.0,
     )
 
 

@@ -156,6 +156,11 @@ class BitRewardsModel(Model):
         self.run_phase_for_agent_type(InvestorAgent)
         self.run_phase_for_agent_type(UserAgent)
         self.distribute_usage_event_fees()
+        if self.parameters.royalty_batch_interval > 0 and self.current_step % self.parameters.royalty_batch_interval == 0:
+            self._distribute_batched_royalties()
+        for agent in self.agent_by_identifier.values():
+            if isinstance(agent, EconomicAgent):
+                agent.unlock_escrowed_rewards(self.current_step)
         self._flush_pending_payouts_if_due()
         self._decrement_funding_lockups()
         self._update_agent_satisfaction_and_churn()
@@ -203,6 +208,18 @@ class BitRewardsModel(Model):
         if target_identifier not in self.contributions:
             return None
         target_contribution = self.contributions[target_identifier]
+        max_available = min(self.parameters.funding_max_amount, investor.budget)
+        if max_available <= 0.0:
+            return None
+        min_available = min(self.parameters.funding_min_amount, max_available)
+        amount = self.random.uniform(min_available, max_available)
+        royalty_percent = self.random.uniform(
+            self.parameters.funding_royalty_min,
+            self.parameters.funding_royalty_max,
+        )
+        investor.budget -= amount
+        investor.total_invested += amount
+        investor.record_cost(amount)
         identifier = self.next_contribution_identifier()
         parents: List[str] = [target_identifier]
         contribution = Contribution(
@@ -213,33 +230,32 @@ class BitRewardsModel(Model):
             quality=target_contribution.quality,
             parents=parents,
             kind="funding",
+            royalty_percent=royalty_percent,
         )
         lockup_steps = max(0, self.parameters.funding_lockup_period_steps)
         contribution.lockup_remaining_steps = lockup_steps
         self.contributions[identifier] = contribution
         self.contribution_graph.add_contribution_node(identifier)
-        cost = self.parameters.funding_contribution_cost
-        if cost > 0.0:
-            self.total_funding_invested += cost
-            treasury_fraction = self.parameters.treasury_funding_rate
-            treasury_amount = max(0.0, min(1.0, treasury_fraction)) * cost
-            creator_amount = cost - treasury_amount
-            creator_agent = self.agent_by_identifier.get(target_contribution.owner_id)
-            if creator_agent is not None:
-                creator_agent.wealth += creator_amount
-            if treasury_amount > 0.0:
-                self.treasury.balance += treasury_amount
-                self.treasury.cumulative_inflows += treasury_amount
-            if hasattr(target_contribution, "funding_raised"):
-                target_contribution.funding_raised += cost
+        self.total_funding_invested += amount
+        treasury_fraction = self.parameters.treasury_funding_rate
+        treasury_amount = max(0.0, min(1.0, treasury_fraction)) * amount
+        creator_amount = amount - treasury_amount
+        creator_agent = self.agent_by_identifier.get(target_contribution.owner_id)
+        if creator_agent is not None:
+            creator_agent.wealth += creator_amount
+        if treasury_amount > 0.0:
+            self.treasury.balance += treasury_amount
+            self.treasury.cumulative_inflows += treasury_amount
+        if hasattr(target_contribution, "funding_raised"):
+            target_contribution.funding_raised += amount
         funding_split = self.parameters.get_funding_split_for_target_type(
             target_contribution.contribution_type
         )
         if funding_split > 0.0:
-            self.contribution_graph.add_parent_child_edge(
-                parent_id=identifier,
-                child_id=target_identifier,
-                split_fraction=funding_split,
+            self.contribution_graph.add_royalty_edge(
+                parent_identifier=identifier,
+                child_identifier=target_identifier,
+                royalty_percent=royalty_percent if royalty_percent > 0.0 else funding_split,
             )
         return identifier
 
@@ -250,17 +266,10 @@ class BitRewardsModel(Model):
             gross_value = gross_value * math.exp(
                 self.random.gauss(0.0, self.parameters.usage_shock_std)
             )
-        contribution = self.contributions[contribution_identifier]
-        base_share = self.parameters.get_base_royalty_share_for(
-            contribution.contribution_type
-        )
-        fee_amount = gross_value * self.parameters.gas_fee_share_rate * base_share
-        if fee_amount <= 0.0:
-            return
         usage_event = UsageEvent(
             contribution_id=contribution_identifier,
             gross_value=gross_value,
-            fee_amount=fee_amount,
+            fee_amount=0.0,
         )
         self.usage_events.append(usage_event)
 
@@ -479,6 +488,15 @@ class BitRewardsModel(Model):
             remaining = getattr(contribution, "lockup_remaining_steps", 0)
             if remaining > 0:
                 contribution.lockup_remaining_steps = remaining - 1
+        for agent in self.agent_by_identifier.values():
+            if not isinstance(agent, EconomicAgent):
+                continue
+            if not agent.escrowed_rewards:
+                continue
+            for entry in agent.escrowed_rewards:
+                if "release_step" in entry:
+                    entry["release_step"] = int(entry["release_step"]) - 1
+            agent.unlock_escrowed_rewards(self.current_step)
 
     def _schedule_payout(self, contribution_identifier: str, amount: float) -> None:
         if amount <= 0.0:
@@ -490,6 +508,27 @@ class BitRewardsModel(Model):
         self.pending_payouts[contribution_identifier] = (
             self.pending_payouts.get(contribution_identifier, 0.0) + amount
         )
+
+    def _credit_reward(self, contribution_identifier: str, amount: float, lockup_steps: int = 0) -> None:
+        if amount <= 0.0:
+            return
+        contribution = self.contributions.get(contribution_identifier)
+        if contribution is None:
+            return
+        lock_duration = max(0, lockup_steps)
+        if lock_duration > 0:
+            owner = self.agent_by_identifier.get(contribution.owner_id)
+            if owner is None or not getattr(owner, "is_active", False):
+                return
+            owner.escrowed_rewards.append(
+                {
+                    "contribution_id": contribution_identifier,
+                    "amount": amount,
+                    "release_step": lock_duration,
+                }
+            )
+            return
+        self._schedule_payout(contribution_identifier, amount)
 
     def _flush_pending_payouts_if_due(self) -> None:
         lag = self.parameters.payout_lag_steps
@@ -543,23 +582,65 @@ class BitRewardsModel(Model):
 
     def distribute_usage_event_fees(self) -> None:
         for event in self.usage_events:
-            total_fee = event.fee_amount
-            if total_fee <= 0.0:
+            contribution = self.contributions.get(event.contribution_id)
+            if contribution is None:
                 continue
             self.total_usage_events_this_step += 1
+            base_share = self.parameters.get_base_royalty_share_for(contribution.contribution_type)
+            total_fee = event.gross_value * self.parameters.gas_fee_share_rate * base_share
+            if total_fee <= 0.0:
+                continue
             self.total_fee_distributed_this_step += total_fee
             self.cumulative_fee_distributed += total_fee
             self.cumulative_external_inflows += total_fee
             self.token_state.total_supply += total_fee
             self.token_state.circulating_supply += total_fee
             treasury_cut = total_fee * self.parameters.treasury_fee_rate
-            royalty_pool = total_fee - treasury_cut
+            gas_pool = total_fee - treasury_cut
             if treasury_cut > 0.0:
                 self.treasury.balance += treasury_cut
                 self.treasury.cumulative_inflows += treasury_cut
-            if royalty_pool <= 0.0:
+            if gas_pool > 0.0:
+                self._distribute_value_pool(event.contribution_id, gas_pool)
+            increment = self.parameters.royalty_accrual_per_usage
+            if increment > 0.0:
+                contribution.accrued_royalty_value += increment
+            if hasattr(contribution, "usage_count"):
+                contribution.usage_count += 1
+        self.usage_events.clear()
+
+    def _distribute_value_pool(self, root_identifier: str, pool_value: float) -> None:
+        if pool_value <= 0.0:
+            return
+        shares = self.contribution_graph.compute_royalty_shares(
+            start_id=root_identifier,
+            total_value=pool_value,
+        )
+        if not shares:
+            return
+        for contribution_id, amount in shares.items():
+            contribution = self.contributions.get(contribution_id)
+            if contribution is None or amount <= 0.0:
                 continue
-            self.distribute_fee_pool_for_event(event, royalty_pool)
+            lockup_steps = 0
+            if contribution.contribution_type is ContributionType.FUNDING:
+                lockup_steps = max(0, getattr(contribution, "lockup_remaining_steps", 0))
+            self._credit_reward(contribution_id, amount, lockup_steps)
+
+    def _distribute_batched_royalties(self) -> None:
+        pending: List[tuple[str, float]] = []
+        for contribution_id, contribution in self.contributions.items():
+            if contribution.accrued_royalty_value > 0.0:
+                pending.append((contribution_id, contribution.accrued_royalty_value))
+        if not pending:
+            return
+        for root_identifier, total_value in pending:
+            self._distribute_value_pool(root_identifier, total_value)
+            contribution = self.contributions[root_identifier]
+            contribution.accrued_royalty_value = 0.0
+            self.cumulative_external_inflows += total_value
+            self.token_state.total_supply += total_value
+            self.token_state.circulating_supply += total_value
 
     def _update_agent_satisfaction_and_churn(self) -> None:
         epsilon = 1e-6
@@ -648,28 +729,15 @@ class BitRewardsModel(Model):
         contribution = self.contributions.get(contribution_identifier)
         if contribution is None:
             return
-        if (
-            contribution.contribution_type is ContributionType.FUNDING
-            and getattr(contribution, "lockup_remaining_steps", 0) > 0
-        ):
-            self.treasury.balance += amount
-            self.treasury.cumulative_inflows += amount
-            return
-        self._schedule_payout(contribution_identifier, amount)
+        lockup_steps = 0
+        if contribution.contribution_type is ContributionType.FUNDING:
+            lockup_steps = max(0, getattr(contribution, "lockup_remaining_steps", 0))
+        self._credit_reward(contribution_identifier, amount, lockup_steps)
 
     def distribute_fee_pool_for_event(self, event: UsageEvent, fee_pool: float) -> None:
         if fee_pool <= 0.0:
             return
-        shares = self.contribution_graph.compute_royalty_shares(
-            start_id=event.contribution_id,
-            total_value=fee_pool,
-        )
-        if not shares:
-            return
-        for contribution_id, amount in shares.items():
-            if amount <= 0.0:
-                continue
-            self._handle_own_share_with_frictions(contribution_id, amount)
+        self._distribute_value_pool(event.contribution_id, fee_pool)
 
     def _infer_role_for_agent(self, agent: EconomicAgent) -> str | None:
         if isinstance(agent, CreatorAgent):
