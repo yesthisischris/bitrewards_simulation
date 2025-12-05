@@ -24,6 +24,12 @@ class BitRewardsModel(Model):
         self.cumulative_fee_distributed = 0.0
         self.total_usage_events_this_step = 0
         self.agent_by_identifier: Dict[int, EconomicAgent] = {}
+        self.next_agent_identifier: int = 0
+        self.current_step: int = 0
+        self.new_creators_this_step: int = 0
+        self.new_investors_this_step: int = 0
+        self.new_users_this_step: int = 0
+        self.pending_payouts: Dict[str, float] = {}
         self.treasury = TreasuryState()
         self.total_funding_invested = 0.0
         self.initial_total_wealth = 0.0
@@ -49,7 +55,7 @@ class BitRewardsModel(Model):
         }
         self.datacollector = DataCollector(
             model_reporters={
-                "step": lambda m: m.steps,
+                "step": lambda m: m.current_step,
                 "contribution_count": contribution_count,
                 "usage_event_count": usage_event_count,
                 "active_creator_count": active_creator_count,
@@ -80,6 +86,10 @@ class BitRewardsModel(Model):
                 "treasury_balance": treasury_balance,
                 "total_funding_invested": total_funding_invested,
                 "total_wealth": total_wealth,
+                "new_creators_this_step": new_creators_this_step,
+                "new_investors_this_step": new_investors_this_step,
+                "new_users_this_step": new_users_this_step,
+                "locked_funding_positions": locked_funding_positions,
             },
             agent_reporters={
                 "wealth": "wealth",
@@ -104,17 +114,24 @@ class BitRewardsModel(Model):
         self.usage_events.clear()
         self.total_fee_distributed_this_step = 0.0
         self.total_usage_events_this_step = 0
+        self.new_creators_this_step = 0
+        self.new_investors_this_step = 0
+        self.new_users_this_step = 0
         for contribution_type in self.reward_paid_by_type_this_step:
             self.reward_paid_by_type_this_step[contribution_type] = 0.0
         for role in self.reward_paid_by_role_this_step:
             self.reward_paid_by_role_this_step[role] = 0.0
 
     def step(self) -> None:
+        self.current_step += 1
         self.reset_step_internal_state()
+        self.spawn_new_agents()
         self.run_phase_for_agent_type(CreatorAgent)
         self.run_phase_for_agent_type(InvestorAgent)
         self.run_phase_for_agent_type(UserAgent)
         self.distribute_usage_event_fees()
+        self._flush_pending_payouts_if_due()
+        self._decrement_funding_lockups()
         self._update_agent_satisfaction_and_churn()
         self.datacollector.collect(self)
 
@@ -168,6 +185,8 @@ class BitRewardsModel(Model):
             quality=target_contribution.quality,
             parents=parents,
         )
+        lockup_steps = max(0, self.parameters.funding_lockup_period_steps)
+        contribution.lockup_remaining_steps = lockup_steps
         self.contributions[identifier] = contribution
         self.contribution_graph.add_contribution_node(identifier)
         cost = self.parameters.funding_contribution_cost
@@ -198,6 +217,10 @@ class BitRewardsModel(Model):
     def register_usage_event(self, contribution_identifier: str, gross_value: float) -> None:
         if contribution_identifier not in self.contributions:
             return
+        if self.parameters.usage_shock_std > 0.0:
+            gross_value = gross_value * math.exp(
+                self.random.gauss(0.0, self.parameters.usage_shock_std)
+            )
         contribution = self.contributions[contribution_identifier]
         base_share = self.parameters.get_base_royalty_share_for(
             contribution.contribution_type
@@ -254,11 +277,143 @@ class BitRewardsModel(Model):
             self.agent_by_identifier[identifier] = user
             self.users.append(user)
             identifier += 1
+        self.next_agent_identifier = identifier
 
     def reset_agents_for_new_step(self) -> None:
         for agent in self.agent_by_identifier.values():
             if isinstance(agent, EconomicAgent):
                 agent.reset_step_state()
+
+    def _sample_poisson(self, lam: float) -> int:
+        if lam <= 0.0:
+            return 0
+        limit = math.exp(-lam)
+        k = 0
+        p = 1.0
+        while True:
+            k += 1
+            p *= self.random.random()
+            if p <= limit:
+                return k - 1
+
+    def _mean_roi_for_agents(self, agents: List[EconomicAgent]) -> float:
+        rois: List[float] = []
+        for agent in agents:
+            if not agent.is_active:
+                continue
+            if getattr(agent, "cumulative_cost", 0.0) <= 0.0:
+                continue
+            rois.append(agent.current_roi)
+        if not rois:
+            return 0.0
+        return sum(rois) / len(rois)
+
+    def _effective_arrival_rate(
+        self,
+        base_rate: float,
+        sensitivity: float,
+        agents: List[EconomicAgent],
+    ) -> float:
+        if base_rate <= 0.0:
+            return 0.0
+        mean_roi = self._mean_roi_for_agents(agents)
+        multiplier = 1.0 + sensitivity * mean_roi
+        if multiplier < 0.0:
+            multiplier = 0.0
+        return base_rate * multiplier
+
+    def spawn_new_agents(self) -> None:
+        creator_lambda = self._effective_arrival_rate(
+            self.parameters.creator_arrival_rate,
+            self.parameters.creator_arrival_roi_sensitivity,
+            self.creators,
+        )
+        num_creators = self._sample_poisson(creator_lambda)
+        for _ in range(num_creators):
+            role = "developer"
+            skill = self.random.uniform(
+                self.parameters.min_creator_skill,
+                self.parameters.max_creator_skill,
+            )
+            creator = CreatorAgent(
+                unique_id=self.next_agent_identifier,
+                model=self,
+                parameters=self.parameters,
+                role=role,
+                skill=skill,
+            )
+            self.agent_by_identifier[self.next_agent_identifier] = creator
+            self.creators.append(creator)
+            self.next_agent_identifier += 1
+            self.new_creators_this_step += 1
+
+        investor_lambda = self._effective_arrival_rate(
+            self.parameters.investor_arrival_rate,
+            self.parameters.investor_arrival_roi_sensitivity,
+            self.investors,
+        )
+        num_investors = self._sample_poisson(investor_lambda)
+        for _ in range(num_investors):
+            investor = InvestorAgent(
+                unique_id=self.next_agent_identifier,
+                model=self,
+                parameters=self.parameters,
+                initial_budget=self.parameters.initial_investor_budget,
+            )
+            self.agent_by_identifier[self.next_agent_identifier] = investor
+            self.investors.append(investor)
+            self.next_agent_identifier += 1
+            self.new_investors_this_step += 1
+
+        user_lambda = self._effective_arrival_rate(
+            self.parameters.user_arrival_rate,
+            self.parameters.user_arrival_roi_sensitivity,
+            self.users,
+        )
+        num_users = self._sample_poisson(user_lambda)
+        for _ in range(num_users):
+            user = UserAgent(
+                unique_id=self.next_agent_identifier,
+                model=self,
+                parameters=self.parameters,
+            )
+            self.agent_by_identifier[self.next_agent_identifier] = user
+            self.users.append(user)
+            self.next_agent_identifier += 1
+            self.new_users_this_step += 1
+
+    def _decrement_funding_lockups(self) -> None:
+        if self.parameters.funding_lockup_period_steps <= 0:
+            return
+        for contribution in self.contributions.values():
+            if contribution.contribution_type is not ContributionType.FUNDING:
+                continue
+            remaining = getattr(contribution, "lockup_remaining_steps", 0)
+            if remaining > 0:
+                contribution.lockup_remaining_steps = remaining - 1
+
+    def _schedule_payout(self, contribution_identifier: str, amount: float) -> None:
+        if amount <= 0.0:
+            return
+        lag = self.parameters.payout_lag_steps
+        if lag <= 0:
+            self.pay_contribution_owner(contribution_identifier, amount)
+            return
+        self.pending_payouts[contribution_identifier] = (
+            self.pending_payouts.get(contribution_identifier, 0.0) + amount
+        )
+
+    def _flush_pending_payouts_if_due(self) -> None:
+        lag = self.parameters.payout_lag_steps
+        if lag <= 0:
+            return
+        if self.current_step <= 0:
+            return
+        if self.current_step % lag != 0:
+            return
+        for contribution_identifier, amount in list(self.pending_payouts.items()):
+            self.pay_contribution_owner(contribution_identifier, amount)
+        self.pending_payouts.clear()
 
     def run_phase_for_agent_type(self, agent_type: Type[EconomicAgent]) -> None:
         if agent_type is CreatorAgent:
@@ -359,6 +514,25 @@ class BitRewardsModel(Model):
                 if agent.low_satisfaction_streak >= self.parameters.satisfaction_churn_window:
                     agent.is_active = False
 
+    def _handle_own_share_with_frictions(
+        self,
+        contribution_identifier: str,
+        amount: float,
+    ) -> None:
+        if amount <= 0.0:
+            return
+        contribution = self.contributions.get(contribution_identifier)
+        if contribution is None:
+            return
+        if (
+            contribution.contribution_type is ContributionType.FUNDING
+            and getattr(contribution, "lockup_remaining_steps", 0) > 0
+        ):
+            self.treasury.balance += amount
+            self.treasury.cumulative_inflows += amount
+            return
+        self._schedule_payout(contribution_identifier, amount)
+
     def distribute_fee_pool_for_event(self, event: UsageEvent, fee_pool: float) -> None:
         remaining_items: List[tuple[str, float]] = [
             (event.contribution_id, fee_pool)
@@ -372,7 +546,7 @@ class BitRewardsModel(Model):
             visited.add(key)
             parents = self.contribution_graph.get_parents(current_identifier)
             if not parents:
-                self.pay_contribution_owner(current_identifier, pool_value)
+                self._handle_own_share_with_frictions(current_identifier, pool_value)
                 continue
             split_values = [
                 self.contribution_graph.get_split_fraction(parent, current_identifier)
@@ -381,7 +555,7 @@ class BitRewardsModel(Model):
             clipped_splits = [max(0.0, min(1.0, value)) for value in split_values]
             total_split = sum(clipped_splits)
             if total_split == 0.0:
-                self.pay_contribution_owner(current_identifier, pool_value)
+                self._handle_own_share_with_frictions(current_identifier, pool_value)
                 continue
             if total_split > 1.0:
                 normalized_splits = [value / total_split for value in clipped_splits]
@@ -396,7 +570,7 @@ class BitRewardsModel(Model):
             own_amount = pool_value - total_parent_amount
             if own_amount < 0.0:
                 own_amount = 0.0
-            self.pay_contribution_owner(current_identifier, own_amount)
+            self._handle_own_share_with_frictions(current_identifier, own_amount)
             for parent_identifier, amount in zip(parents, parent_amounts):
                 if amount <= 0.0:
                     continue
@@ -619,3 +793,26 @@ def total_funding_invested(model: BitRewardsModel) -> float:
 
 def total_wealth(model: BitRewardsModel) -> float:
     return model._compute_total_wealth()
+
+
+def new_creators_this_step(model: BitRewardsModel) -> int:
+    return model.new_creators_this_step
+
+
+def new_investors_this_step(model: BitRewardsModel) -> int:
+    return model.new_investors_this_step
+
+
+def new_users_this_step(model: BitRewardsModel) -> int:
+    return model.new_users_this_step
+
+
+def locked_funding_positions(model: BitRewardsModel) -> int:
+    count = 0
+    for contribution in model.contributions.values():
+        if (
+            contribution.contribution_type is ContributionType.FUNDING
+            and getattr(contribution, "lockup_remaining_steps", 0) > 0
+        ):
+            count += 1
+    return count

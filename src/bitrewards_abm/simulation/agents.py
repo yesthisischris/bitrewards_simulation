@@ -137,11 +137,18 @@ class UserAgent(EconomicAgent):
             return
         if self.random.random() > self.parameters.user_usage_probability:
             return
-        contribution_identifier = self.select_contribution_for_usage()
-        if contribution_identifier is None:
+        mean_usage = getattr(self.parameters, "user_mean_usage_rate", 1.0)
+        if mean_usage <= 0.0:
             return
-        gross_value = self.parameters.base_gross_value
-        self.model.register_usage_event(contribution_identifier, gross_value)
+        num_events = self.model._sample_poisson(mean_usage)
+        if num_events <= 0:
+            return
+        for _ in range(num_events):
+            contribution_identifier = self.select_contribution_for_usage()
+            if contribution_identifier is None:
+                break
+            gross_value = self.parameters.base_gross_value
+            self.model.register_usage_event(contribution_identifier, gross_value)
 
     def select_contribution_for_usage(self) -> str | None:
         identifiers = list(self.model.contributions.keys())

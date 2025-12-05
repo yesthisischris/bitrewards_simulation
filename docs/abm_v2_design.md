@@ -516,6 +516,52 @@ In v2:
 
 This makes collapse for creators and investors an emergent property of ROI paths rather than a direct function of a fixed satisfaction window.
 
+### 3.4 Stochastic arrivals, usage, and capital frictions (PR 4)
+
+**Arrivals**
+
+- Each step, for each role (creator, investor, user), the model computes an effective Poisson rate:
+  - Base rate: `creator_arrival_rate`, `investor_arrival_rate`, `user_arrival_rate`
+  - Mean ROI per role: average `current_roi` over active agents of that role
+  - Sensitivity: `<role>_arrival_roi_sensitivity`
+- The effective rate is:
+
+> λ_effective = base_rate × max(0, 1 + sensitivity × mean_roi)
+
+- New agents per role are drawn as `Poisson(λ_effective)`.
+- The model logs:
+  - `new_creators_this_step`
+  - `new_investors_this_step`
+  - `new_users_this_step`
+
+**Usage and shocks**
+
+- Users have a two-stage decision each step:
+  1. Become active with probability `user_usage_probability`.
+  2. If active, draw `num_events ~ Poisson(user_mean_usage_rate)`.
+- For each event, the user selects a random contribution and passes `base_gross_value` to `register_usage_event`.
+- `register_usage_event` applies a log-normal shock when `usage_shock_std > 0`:
+
+> gross_value_effective = base_gross_value × exp(N(0, usage_shock_std))
+
+- Fees are computed from `gross_value_effective` via `gas_fee_share_rate` and the base role share.
+
+**Capital frictions**
+
+- Funding lockup
+  - New FUNDING contributions are created with `lockup_remaining_steps = funding_lockup_period_steps`.
+  - During DAG fee distribution:
+    - If a FUNDING node has `lockup_remaining_steps > 0`, its own fee share is not paid to the investor.
+    - This locked share is routed to the treasury.
+  - Each step, `lockup_remaining_steps` is decremented by 1 until reaching 0.
+  - The model logs the current number of locked funding positions as `locked_funding_positions`.
+- Payout lag
+  - Contributions’ fee shares are first placed into a pending payouts buffer keyed by contribution id.
+  - If `payout_lag_steps == 0`, payouts are applied immediately (v1 behavior).
+  - If `payout_lag_steps > 0`, the buffer is only flushed every `payout_lag_steps` steps:
+    - On flush, each `(contribution_id, amount)` is paid via `pay_contribution_owner`.
+    - ROI accounting and reward metrics update at flush time, not at event time.
+
 ---
 
 ## 4. `src/bitrewards_abm/domain/entities.py`
