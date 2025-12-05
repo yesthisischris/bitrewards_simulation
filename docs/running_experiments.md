@@ -1,6 +1,6 @@
 # Running Experiments
 
-This document explains how to run the BitRewards ABM and batch experiments.
+This document explains how to run the BitRewards ABM and batch experiments. The full model design is in `docs/abm_design.md`.
 
 ABM stands for agent based model. It is a simulation where many agent objects interact according to local rules.
 
