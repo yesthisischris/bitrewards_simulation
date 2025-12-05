@@ -34,8 +34,7 @@ htmlcov/
 # Poetry
 poetry.lock.bak
 
-# Generated data and visuals
-data/*.csv
+# Generated visuals
 data/reference/
-visuals/output/
+visuals/output/*
 visuals/reference*/

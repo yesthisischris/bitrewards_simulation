@@ -63,3 +63,10 @@
 4. Rename unclear variables and functions
 5. Remove any existing comments by making code self-explanatory
 6. Introduce abstractions for external dependencies
+
+### Documentation Discipline
+
+1. When behavior or parameters change, update `docs/model.md` and `docs/usage.md` in the same PR
+2. Keep quickstart commands valid; if CLI flags or defaults move, refresh the snippets
+3. Record new scenarios and expected outcomes in `docs/usage.md` before merging
+4. Do not leave stale references to removed files or paths; replace them with current locations

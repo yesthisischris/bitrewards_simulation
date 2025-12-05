@@ -1,281 +1,37 @@
-# bitrewards simulation draft design document
+# BITrewards Simulation
 
-1. Purpose and scope
+Mesa ABM of the BITrewards protocol focused on economic and behavioral dynamics (contributors, investors, users) rather than blockchain internals.
 
-We want a Mesa ABM that simulates the BITrewards protocol as described in the BITrewards whitepaper V4.  ￼
+- Understand sustainability, fairness, and investor ROI across parameter regimes
+- Generate reproducible datasets for downstream analysis
+- Compare reference scenarios and stress-test protocol assumptions
 
-Primary goals:
-	1.	Explore how the protocol behaves under different parameter settings:
-	•	gas fee sharing rates (0.1–1 percent baseline in whitepaper)
-	•	royalty splits between initiators, contributors, reviewers, investors, etc.
-	•	AI tracing accuracy and graph structure
-	2.	Measure:
-	•	ecosystem sustainability (total contributions, usage, active agents)
-	•	fairness of rewards across roles and contribution types
-	•	investor ROI
-	•	robustness and phase transitions (collapse vs thriving regimes)
-	3.	Produce datasets usable by an external tool (for example Kosmos) for deeper analysis and design optimization.
+## Documentation
 
-We explicitly do not simulate blockchain internals. We simulate economic and behavioral logic on top of a stylized protocol.
+Start with `docs/README.md` for navigation by role.
 
-Time unit: one “step” = one week (or similar consistent unit).
-Model run length: typically 200–500 steps per run, configurable.
+- Model details and parameters: `docs/model.md`
+- Running, configs, data schema, scenarios, analysis: `docs/usage.md`
 
-## Model design
+## Quick run
 
-- `docs/abm_design.md` is the canonical design spec (entities, parameters, capital flows, ROI-based churn, DAG royalties, token supply, reputation/identity).
-- Historical tag `abm-v1-initial` preserves the earliest model; all current work builds on the design above.
+```bash
+poetry install
+poetry run python -m bitrewards_abm.run_simulation --config configs/baseline.toml --steps 100 --seed 42
+```
 
-## Data outputs
+Batch example:
 
-- `experiments/run_batch.py` writes `data/timeseries.csv` (per-step metrics per run) and `data/run_summary.csv` (one row per run with final metrics and aggregates).
-- The stable schema for both files is documented in `docs/data_schema.md`. Downstream analysis tools should rely on that schema.
-- See `docs/running_experiments.md` for CLI usage and scenario configuration.
+```bash
+poetry run python experiments/run_batch.py --config configs/baseline.toml --out-dir data/baseline
+```
 
-## Kosmos handoff
+Outputs are `timeseries.csv` and `run_summary.csv` under the chosen `--out-dir`.
 
-This repository is designed so an AI scientist (for example Kosmos) can analyze the BITrewards protocol.
+## Reference scenarios
 
-- `docs/kosmos_brief.md` describes the model, data, scenarios, and the research questions to investigate.
-- `configs/` holds TOML configs for named scenarios (`baseline`, `low_tracing_accuracy`, `high_funding_share`, `high_investor_share`).
-- `data/reference/<scenario_name>/` is the layout for reference datasets (`timeseries.csv`, `run_summary.csv`) generated from those configs.
-- `docs/data_schema.md` documents the stable CSV schema.
-- `visuals/abm_visuals.py` generates refreshed charts aligned with the current model (role mix, rewards, funding, tracing).
-
-⸻
-
-2. High level conceptual model
-
-2.1 Entities
-
-There are four main entity types in the model:
-	1.	CreatorAgent
-	•	Represents anyone who creates “work”:
-	•	developers
-	•	scientists
-	•	reviewers
-	•	curators
-	•	moderators
-	•	educators, etc.
-	•	They mint contribution NFTs, either:
-	•	initiator contributions (base modules, discoveries, datasets)
-	•	derivative contributions (forks, improvements, reviews, curation, etc.)
-	2.	InvestorAgent
-	•	Provides funding via “funding” NFTs (1–3 percent royalties per whitepaper).  ￼
-	•	Chooses which projects or features to fund based on expected ROI and risk tolerance.
-	3.	UserAgent
-	•	Represents end users who “use” modules and drive transaction volume.
-	•	Their usage events generate:
-	•	gross economic value (revenue proxy)
-	•	gas fees
-	•	royalty pools.
-	4.	Protocol / Environment objects
-	•	Not a Mesa Agent, but model-level structures:
-	•	Projects
-	•	Contributions
-	•	Contribution graph (DAG)
-	•	Global parameters and reward rules.
-
-Projects and contributions are Python objects managed by the model, not Mesa agents.
-
-⸻
-
-2.2 Project and contribution structures
-
-Project
-
-Represents a coherent product or research line (for example a wallet, a dataset collection, a biological pipeline).
-
-Attributes:
-	•	project_id: int
-	•	domain: str
-(for example “software”, “biology”, “chemistry”, “education”)
-	•	initiator_contribution_id: int
-	•	intrinsic_demand: float
-Baseline user demand.
-	•	reputation: float
-Derived from quality and usage history.
-	•	active: bool
-
-Contribution
-
-Represents a tokenized contribution, intended to map conceptually to an NFT.
-
-Attributes:
-	•	contribution_id: int
-	•	project_id: int
-	•	type: str
-Some examples:
-	•	“software_code”
-	•	“dataset”
-	•	“bio_discovery”
-	•	“funding”
-	•	“review”
-	•	“curation”
-	•	“bugfix”
-	•	“recommendation”
-	•	“annotation”
-	•	“test_case”
-	•	“moderation”
-	•	“event_organization”
-	•	“introduction”
-	•	owner_agent_id: int
-Creator or investor that owns the NFT.
-	•	timestamp_created: int (step number)
-	•	quality: float (0–1)
-	•	base_royalty_percent: float
-For example:
-	•	funding: 0.01–0.03
-	•	review: default 0.10
-	•	curation: default 0.05
-	•	etc., from the whitepaper.  ￼
-	•	parents: list[int]
-IDs of parent contributions (direct inspirations or dependencies).
-	•	metadata: dict
-For extensibility, for example:
-	•	{"role": "reviewer"} or {"kind": "initiator"}.
-
-### Contribution types in the simulation
-
-The simulation groups roles into three contribution categories:
-	•	core_research
-		•	Software code, scientific discoveries, datasets, hardware designs
-	•	funding
-		•	Financial investments and funding NFTs that receive a small royalty share from downstream usage
-	•	supporting
-		•	Reviews, bug fixes, educational content, introductions, recommendations, curation, moderation, events
-
-Creator roles such as developer or scientist mint core_research. Supporting roles (for example reviewer or curator) mint supporting. Investor agents mint funding contributions that attach to a target core_research contribution.
-
-Reward splits are driven by SimulationParameters and helper methods:
-	•	get_base_royalty_share_for(contribution_type)
-	•	get_derivative_split_for(contribution_type)
-	•	get_funding_split_for_target_type(contribution_type)
-
-Baseline split parameters:
-	•	Gas fee share: gas_fee_share_rate = 0.005 (0.5 percent of gross value enters the pool)
-	•	Derivative splits:
-		•	core_research children pass default_derivative_split = 0.5 upstream
-		•	supporting children pass supporting_derivative_split = 0.25 upstream
-		•	funding children do not pass value further upstream
-	•	Funding edges: funding_split_fraction = 0.02 gives investors a 2 percent royalty share on the funded target
-
-Contribution graph
-
-We store a global directed graph:
-	•	model.graph = nx.DiGraph()
-
-Nodes are contribution_id.
-Edges are parent_id -> child_id with attributes:
-	•	split: float
-Fractional share of downstream value passed from child to parent along that edge (for example 0.5 for a 50–50 split).
-	•	Optionally relation_type: str
-(for example “funding”, “review”, “curation”).
-
-Graph must be kept acyclic by construction: new contributions can only point to earlier ones.
-
-This network is the AI tracing approximation.
-
-⸻
-
-3. Agent types and behavior
-
-This section is the main spec for the engineering team.
-
-3.1 Shared design decisions
-
-All agents inherit from mesa.Agent.
-
-Common attributes:
-	•	wealth: float
-Cumulative earnings.
-	•	current_income: float
-Income received this step.
-	•	satisfaction: float (0–1)
-Updated from income and expectations.
-	•	active: bool
-If false, the agent has “left” the ecosystem and takes no further actions.
-
-Satisfaction update
-
-Define a simple rule for all agent types:
-	•	Each agent has an aspiration_income (per step) as an attribute.
-	•	After rewards are distributed:
-
-income_ratio = current_income / (aspiration_income + epsilon)
-satisfaction = 1 / (1 + math.exp(-k * (income_ratio - 1)))  # logistic
-
-	•	k is a sensitivity parameter.
-
-	•	If satisfaction falls below churn_threshold for churn_steps in a row, set active = False.
-	Status: implemented in the model with parameters satisfaction_logistic_k, satisfaction_churn_threshold, satisfaction_churn_window, and aspiration_income_per_step.
-
-Parameters:
-	•	k, churn_threshold, churn_steps defined in model parameter set.
-
-⸻
-
-3.2 CreatorAgent
-
-Represents anyone who mints non-funding contributions.
-
-Attributes
-	•	role: str
-For example “developer”, “scientist”, “reviewer”, “curator”.
-	•	skill: float (0–1)
-Higher skill means higher expected quality and expected demand impact.
-	•	risk_aversion: float (0–1)
-	•	intrinsic_motivation: float (0–1)
-	•	contributions_owned: set[int]
-	•	history_income: list[float]
-For moving average.
-
-Decision loop per step
-
-Each step, for each active creator:
-	1.	Decide whether to attempt a contribution
-	•	Compute an estimated expected monetary payoff per contribution:
-
-expected_payoff = moving_average_past_income_per_contribution_for_this_agent
-
-If not enough history, use global average or a prior.
-
-	•	Combine with intrinsic motivation:
-
-utility = intrinsic_motivation_weight * intrinsic_motivation \
-          + monetary_weight * (expected_payoff / (aspiration_income + epsilon))
-
-
-	•	Probability of contributing:
-
-p_contribute = sigmoid(beta * (utility - contribution_threshold))
-
-
-	•	Draw a Bernoulli random variable; if false, do nothing this step.
-
-	2.	Choose contribution type and project
-	•	Decide whether to create a new initiator contribution vs a derivative:
-
-p_new_initiator = p_new_initiator_base * (1 - project_saturation_factor)
-
-Where project_saturation_factor is a function of how many existing projects already exist, to avoid explosion.
-
-	•	If creating a new project:
-	•	Create a new Project object.
-	•	Create an initiator Contribution of type matching the agent role (for example “software_code” for developers, “bio_discovery” for scientists).
-	•	Add node to graph with no parents.
-	•	If creating a derivative:
-	•	Choose a target project with probability proportional to:
-	•	project reputation
-	•	alignment with agent role
-	•	recent rewards observed (popular projects are more attractive).
-	•	Within that project, choose parents:
-	•	for code: choose existing “software_code” or “dataset” contributions.
-	•	for reviews: choose a main contribution to review.
-	•	for curation: choose a set of contributions to curate.
-	•	Determine contribution type:
-	•	Option 1: sample from a distribution conditioned on role.
-	•	Option 2 (simpler initial): single unified type “work” vs specialized types later.
+- Baseline, low tracing accuracy, high funding share, high investor share configs live in `configs/`
+- Expected behaviors and reference data locations are summarized in `docs/usage.md`
 
 	3.	Create new contribution object
 	•	Set quality:
