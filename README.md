@@ -21,18 +21,10 @@ We explicitly do not simulate blockchain internals. We simulate economic and beh
 Time unit: one “step” = one week (or similar consistent unit).
 Model run length: typically 200–500 steps per run, configurable.
 
-## Versioning
+## Model design
 
-- **ABM v1** (agent based model version 1) is the version used for the first Kosmos diagnostic run.  
-  - The code for ABM v1 is tagged as `abm-v1-initial`.
-- **ABM v2** is an evolution of the same model that:
-  - Fixes capital flow issues in the funding mechanism
-  - Grounds churn and entry decisions in realized ROI (return on investment)
-  - Adds stochastic arrivals, capital frictions, and token supply tracking
-  - Aligns the royalty DAG (directed acyclic graph) with the BITrewards whitepaper
-
-The `main` branch now tracks ABM v2 development.  
-The v1 behavior remains reproducible at the `abm-v1-initial` tag.
+- `docs/abm_design.md` is the canonical design spec (entities, parameters, capital flows, ROI-based churn, DAG royalties, token supply, reputation/identity).
+- Historical tag `abm-v1-initial` preserves the earliest model; all current work builds on the design above.
 
 ## Data outputs
 

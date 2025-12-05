@@ -1,26 +1,26 @@
-# Story Pack Additions for ABM v2 (PR1–PR6)
+# Story Pack Additions for the BITrewards ABM
 
-Use this checklist to expand the story pack with v2 visuals. They can start as stylized diagrams and later be wired to real outputs.
+Use this checklist to expand the story pack with visuals. They can start as stylized diagrams and later be wired to real outputs.
 
 ## Section 1: Big picture
 
-**Visual 1 – ABM v2 system map**
-- Diagram showing creators, investors, users feeding usage into the contribution DAG inside “BITrewards protocol (ABM v2)”.
+**Visual 1 – ABM system map**
+- Diagram showing creators, investors, users feeding usage into the contribution DAG inside “BITrewards protocol”.
 - Treasury box with fee cut, slashed rewards, and identity cost inflows; token supply bubble (total, circulating, burned) with inflation/burn arrows.
-- Callouts: capital conserving flows, ROI-based churn, stochastic arrivals/lockups/payout lags, token supply + holding times. Note v1 vs v2: v1 had no treasury, funding sunk capital; v2 makes flows explicit.
+- Callouts: capital conserving flows, ROI-based churn, stochastic arrivals/lockups/payout lags, token supply + holding times. Note contrast with the legacy model that lacked a treasury and deleted funding principal.
 
 ## Section 2: Capital flows and invariants
 
-**Visual 2 – Funding flows v1 vs v2**
-- Side-by-side arrows or Sankey: v1 investor 100 → capital sink; creator stays at 0. v2: 75 to creator, 25 to treasury (funding_contribution_cost=100, treasury_funding_rate=0.25). Total capital conserved.
+**Visual 2 – Funding flows: legacy vs current**
+- Side-by-side arrows or Sankey: legacy investor 100 → capital sink; creator stays at 0. Current: 75 to creator, 25 to treasury (funding_contribution_cost=100, treasury_funding_rate=0.25). Total capital conserved.
 
 **Visual 3 – Total wealth invariant**
-- Line chart of total wealth (flat until fees/inflation), cumulative fees minted, and total wealth minus cumulative fees (flat baseline). Note v1 wealth destruction vs v2 invariant.
+- Line chart of total wealth (flat until fees/inflation), cumulative fees minted, and total wealth minus cumulative fees (flat baseline). Note legacy wealth destruction vs current invariant.
 
 ## Section 3: Behavior and ROI
 
-**Visual 4 – Churn timing v1 vs v2**
-- Panel A (v1): active agents drop in lockstep at churn window multiples. Panel B (v2): staggered drops driven by ROI and noise; investors can churn before creators/users if ROI diverges.
+**Visual 4 – Churn timing: deterministic vs ROI-driven**
+- Panel A (legacy): active agents drop in lockstep at churn window multiples. Panel B (current): staggered drops driven by ROI and noise; investors can churn before creators/users if ROI diverges.
 
 **Visual 5 – ROI → satisfaction → churn pipeline**
 - Flow: events (funding principal, royalties) → per-agent accounting (cumulative_income, cumulative_cost, current_roi) → satisfaction = logistic(1+ROI)+noise → churn test (ROI threshold + low_satisfaction_streak for creators/investors; satisfaction streak for users).
