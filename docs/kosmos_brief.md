@@ -6,6 +6,7 @@ This document is a focused handoff for Kosmos (AI scientist). It describes:
 - The agent based model (ABM) used in code
 - The data artifacts (CSV files, configs, scenarios)
 - Concrete questions to investigate
+- Pointer to the full design spec: `docs/abm_design.md`
 
 ABM stands for agent based model. CSV stands for comma separated values. ROI stands for return on investment. DAG stands for directed acyclic graph. Gini stands for Gini coefficient, a standard inequality measure from 0 (equal) to 1 (very unequal).
 
@@ -32,8 +33,13 @@ BITrewards should roughly align with the whitepaper V4 story:
 - Gas fee sharing from usage events enters a royalty pool.
 - Contributions are tokenized and connected in a DAG representing derivations.
 - AI tracing accuracy determines how well the DAG captures ancestry.
-- Royalties propagate along the DAG according to type specific split rules.
+- Royalties propagate along the DAG according to type specific split rules (path multiplicative splits with the remaining share kept locally).
 - Funding NFTs give investors a small, persistent share on funded modules.
+- Funding principal is reallocated (creator + treasury), not destroyed.
+- Treasury receives a configurable cut of fees plus slashed rewards and identity costs.
+- Token supply and holding times are tracked (fees mint supply; optional inflation/burn).
+- Rewards are reputation-gated; identity creation can have an upfront cost to deter Sybil swarms.
+- Churn for creators/investors is ROI-driven with noise; users use a simpler income ratio with noise.
 
 ---
 
@@ -110,50 +116,40 @@ Each usage event is:
 
 - `UsageEvent(contribution_id, gross_value, fee_amount)`
 
-Fee creation:
+Usage behavior:
 
-- A usage event with `gross_value` generates a fee:
-  - `fee_amount = gross_value * gas_fee_share_rate * base_royalty_share(type)`
-- `gas_fee_share_rate` is typically between 0.1 percent and 1 percent.
-- `base_royalty_share(type)` is a type specific multiplier, usually 1.0 in the baseline.
+- Each active user is gated by `user_usage_probability`. If active, draws `num_events ~ Poisson(user_mean_usage_rate)`.
+- Each usage event draws a contribution, computes `gross_value_effective = base_gross_value * exp(N(0, usage_shock_std))`, and mints a fee:
+  - `fee_amount = gross_value_effective * gas_fee_share_rate * base_royalty_share(type)`
 
 Reward propagation logic:
 
-1. Start with the chosen contribution and the full `fee_amount`.
-2. For that contribution, look up parents in the DAG and their `split_fraction` values.
-3. Normalize splits to at most 1.0 total.
-4. Send the parent fractions upstream, and pay any remaining amount to the current owner.
-5. Repeat upstream recursively until there are no parents.
-
-This yields:
-
-- Local conservation of value in each usage event.
-- Type driven splits because edge fractions are derived from `SimulationParameters`, which depends on `contribution_type`.
+1. Start with the chosen contribution and the fee pool reserved for contributors (after treasury cut).
+2. Use the graph’s `compute_royalty_shares(start_id, pool)` to route value upstream:
+   - At each node: allocate `pool * split` to parents based on edge splits; remaining amount is the node’s own share.
+3. Apply frictions:
+   - Funding lockups: funding nodes with `lockup_remaining_steps > 0` route their share to the treasury until unlocked.
+   - Payout lag: payouts can be buffered and flushed every `payout_lag_steps`.
+4. Treasury also receives its configured fee cut and any slashed rewards (from low reputation or unverified contributions).
 
 Funding behavior:
 
 - Funding contributions attach to a target module with an edge from funding to target.
 - The edge carries `funding_split_fraction` (for example 2 percent).
-- When the target receives royalties, a fixed fraction flows to the funder via this edge.
+- Funding principal is split between creator and treasury (`treasury_funding_rate`), conserving total capital.
+- When the target receives royalties, a fixed fraction flows to the funder via this edge (subject to lockup, payout lag, and reputation gating).
 
-### 2.4 Satisfaction and churn
+### 2.4 Satisfaction, ROI, and churn
 
-Agent satisfaction is derived from realized income versus aspiration:
-
-- Each agent has `aspiration_income_per_step`.
-- Let `income_ratio = current_income / aspiration_income_per_step`.
-- Satisfaction update per step:
-  - `satisfaction = 1 / (1 + exp(-k * (income_ratio - 1)))`
-  - `k = satisfaction_logistic_k` controls steepness.
-- If `satisfaction` falls below `satisfaction_churn_threshold` for `satisfaction_churn_window` consecutive steps, the agent churns:
-  - `is_active` becomes `False`.
-  - Churn is tracked per role (creators, investors, users).
-
-The model logs:
-
-- Active counts per role.
-- Mean satisfaction per role.
-- Cumulative churn counts per role.
+- Creators and investors track `cumulative_income`, `cumulative_cost`, and `current_roi = income / (cost + epsilon) - 1`.
+- Satisfaction is logistic on `1 + ROI` with optional Gaussian noise (`satisfaction_noise_std`).
+- Churn:
+  - Creators/investors churn when `ROI < role_threshold` AND `low_satisfaction_streak >= roi_churn_window`.
+  - Users use a simpler income ratio satisfaction with noise; churn is based on low satisfaction streak and `satisfaction_churn_window`.
+- Reputation and identity:
+  - Rewards are reputation-gated: `paid = amount * max(0, reputation / min_reputation_for_full_rewards)`, remainder to treasury.
+  - Reputation increases on payouts, decays per step, and drops on churn (`reputation_gain_per_usage`, `reputation_decay_per_step`, `reputation_penalty_for_churn`).
+  - Optional identity cost (`identity_creation_cost`) is charged via `record_cost` when new agents spawn; the same amount is credited to the treasury.
 
 ---
 
