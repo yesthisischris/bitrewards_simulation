@@ -488,6 +488,34 @@ Usage:
 
 - PR3 will call record_cost(creator_contribution_cost) whenever a creator adds a contribution.
 
+### 3.3 ROI-based satisfaction and churn (PR 3)
+
+In v1, satisfaction was a logistic function of per-step income relative to an aspiration income, and churn occurred after a fixed number of consecutive low-satisfaction steps. This made collapse timing mechanically tied to the satisfaction window.
+
+In v2:
+
+- Each economic agent (creator, investor, user) maintains:
+  - cumulative_income
+  - cumulative_cost
+  - current_roi = cumulative_income / (cumulative_cost + epsilon) - 1.0
+
+- Creators and investors:
+  - Satisfaction is driven by ROI, transformed to a non-negative signal:
+    - signal = max(0, 1 + ROI)
+    - satisfaction = 1 / (1 + exp(-k * (signal - 1)))
+  - Satisfaction may include a small Gaussian noise term (satisfaction_noise_std).
+  - low_satisfaction_streak counts consecutive steps where satisfaction is below satisfaction_churn_threshold.
+  - Churn occurs when:
+    - ROI < <role>_roi_exit_threshold, and
+    - low_satisfaction_streak >= roi_churn_window.
+
+- Users:
+  - Satisfaction remains a function of per-step income relative to aspiration.
+  - Churn is based on low-satisfaction streak and satisfaction_churn_window.
+  - Optional noise prevents perfectly synchronized churn.
+
+This makes collapse for creators and investors an emergent property of ROI paths rather than a direct function of a fixed satisfaction window.
+
 ---
 
 ## 4. `src/bitrewards_abm/domain/entities.py`

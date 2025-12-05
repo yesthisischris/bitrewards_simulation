@@ -320,21 +320,44 @@ class BitRewardsModel(Model):
         epsilon = 1e-6
         k = self.parameters.satisfaction_logistic_k
         threshold = self.parameters.satisfaction_churn_threshold
-        window = self.parameters.satisfaction_churn_window
+        roi_window = self.parameters.roi_churn_window
+        noise_std = self.parameters.satisfaction_noise_std
         for agent in self.agent_by_identifier.values():
             if not isinstance(agent, EconomicAgent):
                 continue
-            target_income = agent.aspiration_income
-            if target_income <= 0.0:
-                target_income = self.parameters.aspiration_income_per_step
-            income_ratio = agent.current_income / (target_income + epsilon)
-            agent.satisfaction = 1.0 / (1.0 + math.exp(-k * (income_ratio - 1.0)))
+            if isinstance(agent, UserAgent):
+                target_income = agent.aspiration_income
+                if target_income <= 0.0:
+                    target_income = self.parameters.aspiration_income_per_step
+                signal = agent.current_income / (target_income + epsilon)
+            else:
+                roi = agent.current_roi
+                signal = 1.0 + roi
+                if signal < 0.0:
+                    signal = 0.0
+            satisfaction = 1.0 / (1.0 + math.exp(-k * (signal - 1.0)))
+            if noise_std > 0.0:
+                satisfaction += self.random.gauss(0.0, noise_std)
+            if satisfaction < 0.0:
+                satisfaction = 0.0
+            elif satisfaction > 1.0:
+                satisfaction = 1.0
+            agent.satisfaction = satisfaction
             if agent.satisfaction < threshold:
                 agent.low_satisfaction_streak += 1
             else:
                 agent.low_satisfaction_streak = 0
-            if agent.low_satisfaction_streak >= window:
-                agent.is_active = False
+            if isinstance(agent, InvestorAgent):
+                roi_threshold = self.parameters.investor_roi_exit_threshold
+                if agent.current_roi < roi_threshold and agent.low_satisfaction_streak >= roi_window:
+                    agent.is_active = False
+            elif isinstance(agent, CreatorAgent):
+                roi_threshold = self.parameters.creator_roi_exit_threshold
+                if agent.current_roi < roi_threshold and agent.low_satisfaction_streak >= roi_window:
+                    agent.is_active = False
+            elif isinstance(agent, UserAgent):
+                if agent.low_satisfaction_streak >= self.parameters.satisfaction_churn_window:
+                    agent.is_active = False
 
     def distribute_fee_pool_for_event(self, event: UsageEvent, fee_pool: float) -> None:
         remaining_items: List[tuple[str, float]] = [
@@ -398,7 +421,10 @@ class BitRewardsModel(Model):
         agent = self.agent_by_identifier.get(owner_identifier)
         if agent is None or not agent.is_active:
             return
-        agent.receive_income(amount)
+        if isinstance(agent, EconomicAgent):
+            agent.record_income(amount)
+        else:
+            agent.receive_income(amount)
         contribution_type = contribution.contribution_type
         self.reward_paid_by_type_this_step[contribution_type] += amount
         self.total_reward_paid_by_type[contribution_type] += amount
@@ -477,9 +503,9 @@ def investor_mean_roi(model: BitRewardsModel) -> float:
     investor_agents = model.investors
     roi_values: List[float] = []
     for investor in investor_agents:
-        if investor.total_invested <= 0.0:
+        if getattr(investor, "cumulative_cost", 0.0) <= 0.0:
             continue
-        roi_values.append(investor.wealth / investor.total_invested)
+        roi_values.append(investor.current_roi)
     if not roi_values:
         return 0.0
     return sum(roi_values) / len(roi_values)

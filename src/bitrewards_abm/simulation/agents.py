@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Set
+from typing import List, Set
 
 from mesa import Agent
 
@@ -19,15 +19,36 @@ class EconomicAgent(Agent):
         self.aspiration_income = parameters.aspiration_income_per_step
         self.low_satisfaction_streak = 0
         self.is_active = True
+        self.cumulative_income = 0.0
+        self.cumulative_cost = 0.0
+        self.roi_history: List[float] = []
 
     def reset_step_state(self) -> None:
         self.current_income = 0.0
 
-    def receive_income(self, amount: float) -> None:
+    @property
+    def current_roi(self) -> float:
+        epsilon = 1e-6
+        if self.cumulative_cost <= 0.0:
+            return 0.0
+        return self.cumulative_income / (self.cumulative_cost + epsilon) - 1.0
+
+    def record_income(self, amount: float) -> None:
         if amount <= 0.0:
             return
         self.current_income += amount
         self.wealth += amount
+        self.cumulative_income += amount
+        self.roi_history.append(self.current_roi)
+
+    def record_cost(self, amount: float) -> None:
+        if amount <= 0.0:
+            return
+        self.cumulative_cost += amount
+        self.roi_history.append(self.current_roi)
+
+    def receive_income(self, amount: float) -> None:
+        self.record_income(amount)
 
 
 class CreatorAgent(EconomicAgent):
@@ -47,6 +68,9 @@ class CreatorAgent(EconomicAgent):
         contribution_type = self.infer_contribution_type_from_role()
         quality = self.draw_contribution_quality()
         parent_identifier = self.model.select_parent_for_new_contribution()
+        cost = getattr(self.parameters, "creator_contribution_cost", 0.0)
+        if cost > 0.0:
+            self.record_cost(cost)
         self.model.register_creator_contribution(
             creator=self,
             contribution_type=contribution_type,
@@ -101,6 +125,7 @@ class InvestorAgent(EconomicAgent):
                 break
             self.budget -= cost
             self.total_invested += cost
+            self.record_cost(cost)
             self.funding_contribution_identifiers.add(funding_identifier)
 
 

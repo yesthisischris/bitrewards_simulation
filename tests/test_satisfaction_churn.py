@@ -19,6 +19,11 @@ def build_model(
         satisfaction_churn_threshold=threshold,
         satisfaction_churn_window=window,
         satisfaction_logistic_k=k,
+        roi_churn_window=window,
+        creator_roi_exit_threshold=-0.1,
+        investor_roi_exit_threshold=-0.1,
+        user_roi_exit_threshold=-0.1,
+        satisfaction_noise_std=0.0,
     )
     return BitRewardsModel(parameters)
 
@@ -27,12 +32,14 @@ def test_agent_churns_after_consecutive_low_satisfaction() -> None:
     model = build_model()
     creator = model.creators[0]
 
-    creator.current_income = 0.0
+    creator.cumulative_cost = 1.0
+    creator.cumulative_income = 0.0
     model._update_agent_satisfaction_and_churn()
     assert creator.is_active
     assert creator.low_satisfaction_streak == 1
 
-    creator.current_income = 0.0
+    creator.cumulative_cost = 1.0
+    creator.cumulative_income = 0.0
     model._update_agent_satisfaction_and_churn()
     assert not creator.is_active
 
@@ -41,11 +48,12 @@ def test_satisfaction_recovery_resets_streak() -> None:
     model = build_model()
     creator = model.creators[0]
 
-    creator.current_income = 0.0
+    creator.cumulative_cost = 1.0
+    creator.cumulative_income = 0.0
     model._update_agent_satisfaction_and_churn()
     assert creator.low_satisfaction_streak == 1
 
-    creator.current_income = creator.aspiration_income * 2
+    creator.cumulative_income = 5.0
     model._update_agent_satisfaction_and_churn()
     assert creator.is_active
     assert creator.low_satisfaction_streak == 0
