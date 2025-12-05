@@ -219,6 +219,36 @@ In PR5 we will:
 - Update total_supply on mint and burn events
 - Update mean_holding_time_steps from per agent holding statistics
 
+### 2.7 Capital flows and treasury invariants (PR 2)
+
+In v2, all major capital movements are explicit and trackable.
+
+**Funding**
+
+- An investor pays `funding_contribution_cost` from their budget when creating a FUNDING contribution.
+- The same amount is reallocated into:
+  - Creator wealth: `(1 − treasury_funding_rate) * funding_contribution_cost`
+  - Treasury balance: `treasury_funding_rate * funding_contribution_cost`
+- The model tracks `total_funding_invested` as the sum of all funding principal deployed.
+- Total capital in the system (sum of all agent wealth + budgets + treasury balance) is invariant to funding, so there is no capital sink.
+
+**Usage fees**
+
+- For each usage event with gross value `V`:
+  - `total_fee = V * gas_fee_share_rate * base_share`
+  - Treasury receives `treasury_fee_rate * total_fee`
+  - Contributors receive the remaining `royalty_pool = total_fee − treasury_fee_rate * total_fee` via the DAG
+- The model tracks:
+  - `cumulative_fee_distributed` (total fees minted)
+  - `cumulative_external_inflows` (sum of all minted fees)
+- Total capital evolves as:
+
+> total_wealth_t = initial_total_wealth + cumulative_external_inflows_t
+
+in the absence of any additional minting or burning rules (which are added in a later PR).
+
+These invariants allow us to run source–sink audits and ensure that future changes do not silently destroy or create capital outside explicit mechanisms.
+
 ---
 
 ## 3. Parameter model

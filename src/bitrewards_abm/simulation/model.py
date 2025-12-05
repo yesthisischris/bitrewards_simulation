@@ -6,7 +6,7 @@ from typing import Dict, List, Type
 from mesa import Model
 from mesa.datacollection import DataCollector
 
-from bitrewards_abm.domain.entities import Contribution, ContributionType, UsageEvent
+from bitrewards_abm.domain.entities import Contribution, ContributionType, UsageEvent, TreasuryState
 from bitrewards_abm.domain.parameters import SimulationParameters
 from bitrewards_abm.infrastructure.graph_store import ContributionGraph
 from bitrewards_abm.simulation.agents import CreatorAgent, EconomicAgent, InvestorAgent, UserAgent
@@ -24,6 +24,10 @@ class BitRewardsModel(Model):
         self.cumulative_fee_distributed = 0.0
         self.total_usage_events_this_step = 0
         self.agent_by_identifier: Dict[int, EconomicAgent] = {}
+        self.treasury = TreasuryState()
+        self.total_funding_invested = 0.0
+        self.initial_total_wealth = 0.0
+        self.cumulative_external_inflows = 0.0
         self.creators: List[CreatorAgent] = []
         self.investors: List[InvestorAgent] = []
         self.users: List[UserAgent] = []
@@ -73,6 +77,9 @@ class BitRewardsModel(Model):
                 "role_income_share_creators": role_income_share_creators,
                 "role_income_share_investors": role_income_share_investors,
                 "role_income_share_users": role_income_share_users,
+                "treasury_balance": treasury_balance,
+                "total_funding_invested": total_funding_invested,
+                "total_wealth": total_wealth,
             },
             agent_reporters={
                 "wealth": "wealth",
@@ -82,6 +89,15 @@ class BitRewardsModel(Model):
             },
         )
         self.create_initial_population()
+        self.initial_total_wealth = self._compute_total_wealth()
+
+    def _compute_total_wealth(self) -> float:
+        total = 0.0
+        for agent in self.agent_by_identifier.values():
+            total += getattr(agent, "wealth", 0.0)
+            total += getattr(agent, "budget", 0.0)
+        total += self.treasury.balance
+        return total
 
     def reset_step_internal_state(self) -> None:
         self.reset_agents_for_new_step()
@@ -154,6 +170,20 @@ class BitRewardsModel(Model):
         )
         self.contributions[identifier] = contribution
         self.contribution_graph.add_contribution_node(identifier)
+        cost = self.parameters.funding_contribution_cost
+        if cost > 0.0:
+            self.total_funding_invested += cost
+            treasury_fraction = self.parameters.treasury_funding_rate
+            treasury_amount = max(0.0, min(1.0, treasury_fraction)) * cost
+            creator_amount = cost - treasury_amount
+            creator_agent = self.agent_by_identifier.get(target_contribution.owner_id)
+            if creator_agent is not None:
+                creator_agent.wealth += creator_amount
+            if treasury_amount > 0.0:
+                self.treasury.balance += treasury_amount
+                self.treasury.cumulative_inflows += treasury_amount
+            if hasattr(target_contribution, "funding_raised"):
+                target_contribution.funding_raised += cost
         funding_split = self.parameters.get_funding_split_for_target_type(
             target_contribution.contribution_type
         )
@@ -169,8 +199,12 @@ class BitRewardsModel(Model):
         if contribution_identifier not in self.contributions:
             return
         contribution = self.contributions[contribution_identifier]
-        base_share = self.parameters.get_base_royalty_share_for(contribution.contribution_type)
+        base_share = self.parameters.get_base_royalty_share_for(
+            contribution.contribution_type
+        )
         fee_amount = gross_value * self.parameters.gas_fee_share_rate * base_share
+        if fee_amount <= 0.0:
+            return
         usage_event = UsageEvent(
             contribution_id=contribution_identifier,
             gross_value=gross_value,
@@ -266,12 +300,21 @@ class BitRewardsModel(Model):
 
     def distribute_usage_event_fees(self) -> None:
         for event in self.usage_events:
-            if event.fee_amount <= 0.0:
+            total_fee = event.fee_amount
+            if total_fee <= 0.0:
                 continue
             self.total_usage_events_this_step += 1
-            self.total_fee_distributed_this_step += event.fee_amount
-            self.cumulative_fee_distributed += event.fee_amount
-            self.distribute_fee_pool_for_event(event)
+            self.total_fee_distributed_this_step += total_fee
+            self.cumulative_fee_distributed += total_fee
+            self.cumulative_external_inflows += total_fee
+            treasury_cut = total_fee * self.parameters.treasury_fee_rate
+            royalty_pool = total_fee - treasury_cut
+            if treasury_cut > 0.0:
+                self.treasury.balance += treasury_cut
+                self.treasury.cumulative_inflows += treasury_cut
+            if royalty_pool <= 0.0:
+                continue
+            self.distribute_fee_pool_for_event(event, royalty_pool)
 
     def _update_agent_satisfaction_and_churn(self) -> None:
         epsilon = 1e-6
@@ -293,9 +336,9 @@ class BitRewardsModel(Model):
             if agent.low_satisfaction_streak >= window:
                 agent.is_active = False
 
-    def distribute_fee_pool_for_event(self, event: UsageEvent) -> None:
+    def distribute_fee_pool_for_event(self, event: UsageEvent, fee_pool: float) -> None:
         remaining_items: List[tuple[str, float]] = [
-            (event.contribution_id, event.fee_amount)
+            (event.contribution_id, fee_pool)
         ]
         visited = set()
         while remaining_items:
@@ -538,3 +581,15 @@ def role_income_share_users(model: BitRewardsModel) -> float:
     if total_fee <= 0.0:
         return 0.0
     return total_income_users(model) / total_fee
+
+
+def treasury_balance(model: BitRewardsModel) -> float:
+    return model.treasury.balance
+
+
+def total_funding_invested(model: BitRewardsModel) -> float:
+    return model.total_funding_invested
+
+
+def total_wealth(model: BitRewardsModel) -> float:
+    return model._compute_total_wealth()
