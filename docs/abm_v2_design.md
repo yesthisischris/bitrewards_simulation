@@ -643,6 +643,29 @@ At the end of each step:
 
 This provides a low-cost summary of token velocity without modeling every individual transfer.
 
+### 3.6 DAG royalty engine v2 and reputation-gated rewards (PR 6)
+
+**DAG royalty engine v2**
+
+- The contribution graph stores parent -> child edges with a `split` fraction meaning "fraction of the child's pool that routes to this parent".
+- For a usage event at contribution `S` with royalty pool `F`, `compute_royalty_shares(S, F)`:
+  - Starts at `(S, F)`
+  - At each node with pool `P`, allocates `P * split` to each parent, keeps the remainder as the node's own share, and propagates to parents
+  - Terminates at roots and returns a mapping of contribution id to share where the shares sum to `F`
+
+**Performance and reputation gating**
+
+- Each economic agent tracks `reputation_score ∈ [0, 1]`.
+- When a contribution owned by agent `a` is owed amount `A`:
+  - If `min_reputation_for_full_rewards <= 0`, `a` receives `A`.
+  - Otherwise, `a` receives `A * max(0, reputation_score / min_reputation_for_full_rewards)` and the remainder is routed to the treasury.
+- After a nonzero payout, `reputation_score` increases by `reputation_gain_per_usage` (clipped to 1.0).
+- Each step, reputation decays by `reputation_decay_per_step`. When an agent churns, `reputation_score` is reduced by `reputation_penalty_for_churn`.
+
+**Identity cost (Sybil friction)**
+
+- When new agents are spawned, if `identity_creation_cost > 0` the agent is charged that amount as an upfront cost (added to cumulative_cost and removed from wealth), and the same amount is credited to the treasury. Total wealth stays constant while new identities start in debt.
+
 ---
 
 ## 4. `src/bitrewards_abm/domain/entities.py`

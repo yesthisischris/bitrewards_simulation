@@ -25,6 +25,8 @@ class EconomicAgent(Agent):
         self.holding_time_ema: float = 0.0
         self.last_holding_update_step: int = 0
         self.had_balance_change_this_step: bool = False
+        self.reputation_score: float = 1.0
+        self.identity_weight: float = 1.0
 
     def reset_step_state(self) -> None:
         self.current_income = 0.0

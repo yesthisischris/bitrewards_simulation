@@ -373,6 +373,13 @@ class BitRewardsModel(Model):
             self.creators.append(creator)
             self.next_agent_identifier += 1
             self.new_creators_this_step += 1
+            identity_cost = self.parameters.identity_creation_cost
+            if identity_cost > 0.0:
+                creator.cumulative_cost += identity_cost
+                creator.wealth -= identity_cost
+                creator.had_balance_change_this_step = True
+                self.treasury.balance += identity_cost
+                self.treasury.cumulative_inflows += identity_cost
 
         investor_lambda = self._effective_arrival_rate(
             self.parameters.investor_arrival_rate,
@@ -391,6 +398,13 @@ class BitRewardsModel(Model):
             self.investors.append(investor)
             self.next_agent_identifier += 1
             self.new_investors_this_step += 1
+            identity_cost = self.parameters.identity_creation_cost
+            if identity_cost > 0.0:
+                investor.cumulative_cost += identity_cost
+                investor.wealth -= identity_cost
+                investor.had_balance_change_this_step = True
+                self.treasury.balance += identity_cost
+                self.treasury.cumulative_inflows += identity_cost
 
         user_lambda = self._effective_arrival_rate(
             self.parameters.user_arrival_rate,
@@ -408,6 +422,13 @@ class BitRewardsModel(Model):
             self.users.append(user)
             self.next_agent_identifier += 1
             self.new_users_this_step += 1
+            identity_cost = self.parameters.identity_creation_cost
+            if identity_cost > 0.0:
+                user.cumulative_cost += identity_cost
+                user.wealth -= identity_cost
+                user.had_balance_change_this_step = True
+                self.treasury.balance += identity_cost
+                self.treasury.cumulative_inflows += identity_cost
 
     def _apply_token_inflation_and_burn(self) -> None:
         inflation_rate = self.parameters.token_inflation_rate
@@ -528,9 +549,14 @@ class BitRewardsModel(Model):
         threshold = self.parameters.satisfaction_churn_threshold
         roi_window = self.parameters.roi_churn_window
         noise_std = self.parameters.satisfaction_noise_std
+        rep_decay = self.parameters.reputation_decay_per_step
+        rep_penalty = self.parameters.reputation_penalty_for_churn
         for agent in self.agent_by_identifier.values():
             if not isinstance(agent, EconomicAgent):
                 continue
+            if rep_decay > 0.0:
+                agent.reputation_score = max(0.0, agent.reputation_score - rep_decay)
+            was_active = agent.is_active
             if isinstance(agent, UserAgent):
                 target_income = agent.aspiration_income
                 if target_income <= 0.0:
@@ -564,6 +590,8 @@ class BitRewardsModel(Model):
             elif isinstance(agent, UserAgent):
                 if agent.low_satisfaction_streak >= self.parameters.satisfaction_churn_window:
                     agent.is_active = False
+            if was_active and not agent.is_active and rep_penalty > 0.0:
+                agent.reputation_score = max(0.0, agent.reputation_score - rep_penalty)
 
     def _update_token_holding_times(self) -> None:
         alpha = 0.1
@@ -612,47 +640,18 @@ class BitRewardsModel(Model):
         self._schedule_payout(contribution_identifier, amount)
 
     def distribute_fee_pool_for_event(self, event: UsageEvent, fee_pool: float) -> None:
-        remaining_items: List[tuple[str, float]] = [
-            (event.contribution_id, fee_pool)
-        ]
-        visited = set()
-        while remaining_items:
-            current_identifier, pool_value = remaining_items.pop()
-            key = (current_identifier, pool_value)
-            if key in visited:
+        if fee_pool <= 0.0:
+            return
+        shares = self.contribution_graph.compute_royalty_shares(
+            start_id=event.contribution_id,
+            total_value=fee_pool,
+        )
+        if not shares:
+            return
+        for contribution_id, amount in shares.items():
+            if amount <= 0.0:
                 continue
-            visited.add(key)
-            parents = self.contribution_graph.get_parents(current_identifier)
-            if not parents:
-                self._handle_own_share_with_frictions(current_identifier, pool_value)
-                continue
-            split_values = [
-                self.contribution_graph.get_split_fraction(parent, current_identifier)
-                for parent in parents
-            ]
-            clipped_splits = [max(0.0, min(1.0, value)) for value in split_values]
-            total_split = sum(clipped_splits)
-            if total_split == 0.0:
-                self._handle_own_share_with_frictions(current_identifier, pool_value)
-                continue
-            if total_split > 1.0:
-                normalized_splits = [value / total_split for value in clipped_splits]
-            else:
-                normalized_splits = clipped_splits
-            parent_amounts: List[float] = []
-            total_parent_amount = 0.0
-            for value in normalized_splits:
-                amount = pool_value * value
-                parent_amounts.append(amount)
-                total_parent_amount += amount
-            own_amount = pool_value - total_parent_amount
-            if own_amount < 0.0:
-                own_amount = 0.0
-            self._handle_own_share_with_frictions(current_identifier, own_amount)
-            for parent_identifier, amount in zip(parents, parent_amounts):
-                if amount <= 0.0:
-                    continue
-                remaining_items.append((parent_identifier, amount))
+            self._handle_own_share_with_frictions(contribution_id, amount)
 
     def _infer_role_for_agent(self, agent: EconomicAgent) -> str | None:
         if isinstance(agent, CreatorAgent):
@@ -673,10 +672,29 @@ class BitRewardsModel(Model):
         agent = self.agent_by_identifier.get(owner_identifier)
         if agent is None or not agent.is_active:
             return
+        gated_amount = amount
+        slashed_amount = 0.0
         if isinstance(agent, EconomicAgent):
-            agent.record_income(amount)
-        else:
-            agent.receive_income(amount)
+            threshold = self.parameters.min_reputation_for_full_rewards
+            if threshold > 0.0:
+                reputation = getattr(agent, "reputation_score", 1.0)
+                if reputation < threshold:
+                    gating_factor = max(0.0, reputation / threshold)
+                else:
+                    gating_factor = 1.0
+                gated_amount = amount * gating_factor
+                slashed_amount = amount - gated_amount
+        if slashed_amount > 0.0:
+            self.treasury.balance += slashed_amount
+            self.treasury.cumulative_inflows += slashed_amount
+        if gated_amount > 0.0:
+            if isinstance(agent, EconomicAgent):
+                agent.record_income(gated_amount)
+                gain = self.parameters.reputation_gain_per_usage
+                if gain > 0.0:
+                    agent.reputation_score = min(1.0, agent.reputation_score + gain)
+            else:
+                agent.receive_income(gated_amount)
         contribution_type = contribution.contribution_type
         self.reward_paid_by_type_this_step[contribution_type] += amount
         self.total_reward_paid_by_type[contribution_type] += amount
