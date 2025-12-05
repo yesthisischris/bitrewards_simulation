@@ -49,11 +49,17 @@ class ContributionGraph:
         attributes = self.graph[parent_id][child_id]
         return str(attributes.get("edge_type", "other"))
 
-    def compute_royalty_shares(self, start_id: str, total_value: float) -> Dict[str, float]:
-        if total_value <= 0.0 or start_id not in self.graph.nodes:
+    def compute_royalty_shares(
+        self,
+        root_identifier: str | None = None,
+        total_value: float = 0.0,
+        start_id: str | None = None,
+    ) -> Dict[str, float]:
+        root_id = root_identifier if root_identifier is not None else start_id
+        if total_value <= 0.0 or root_id is None or root_id not in self.graph.nodes:
             return {}
         shares: Dict[str, float] = {}
-        remaining: List[tuple[str, float]] = [(start_id, total_value)]
+        remaining: List[tuple[str, float]] = [(root_id, total_value)]
         visited = set()
         while remaining:
             current_id, pool_value = remaining.pop()
@@ -93,3 +99,13 @@ class ContributionGraph:
                     continue
                 remaining.append((parent_id, amount))
         return shares
+
+    def to_networkx(self) -> nx.DiGraph:
+        graph_copy = nx.DiGraph()
+        graph_copy.add_nodes_from(self.graph.nodes)
+        for parent, child, data in self.graph.edges(data=True):
+            edge_data = dict(data)
+            if "split" in data and "royalty_percent" not in edge_data:
+                edge_data["royalty_percent"] = data.get("split")
+            graph_copy.add_edge(parent, child, **edge_data)
+        return graph_copy

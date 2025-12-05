@@ -75,3 +75,15 @@ poetry run python visuals/kosmos_reference.py \
 ```
 
 Common analyses: sustainability vs churn and ROI, role income fairness, tracing robustness, and phase transitions over fee and funding splits. Use `run_summary.csv` for comparisons and `timeseries.csv` for dynamics.
+
+Generate fresh visuals from a single in-memory run:
+```bash
+poetry run python scripts/generate_visualizations.py
+```
+Artifacts land in `visuals/generated/`:
+- `dag_frames/dag_step_<####>.png` (per-step DAG snapshots for animation or post-processing)
+- `system_map.png`
+- `role_income_dashboard.png`
+- `dag_snapshot.png`
+- `ai_tracing_panel.png`
+- `life_of_contribution_<id>.png`

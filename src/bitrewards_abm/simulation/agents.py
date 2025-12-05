@@ -63,13 +63,22 @@ class EconomicAgent(Agent):
             return
         remaining: List[dict[str, float | int | str]] = []
         for entry in self.escrowed_rewards:
-            release_step = int(entry.get("release_step", 0))
-            if release_step < 0:
-                contribution_id = str(entry.get("contribution_id", ""))
-                amount = float(entry.get("amount", 0.0))
-                if contribution_id:
-                    self.model._schedule_payout(contribution_id, amount)
+            release_step = int(entry.get("release_step", 0)) - 1
+            contribution_id = str(entry.get("contribution_id", ""))
+            amount = float(entry.get("amount", 0.0))
+            payout_type = entry.get("payout_type")
+            source_contribution_id = entry.get("source_contribution_id")
+            channel = entry.get("channel")
+            if release_step < 0 and contribution_id:
+                self.model._schedule_payout(
+                    contribution_id,
+                    amount,
+                    payout_type if isinstance(payout_type, str) else None,
+                    source_contribution_id if isinstance(source_contribution_id, str) else None,
+                    channel if isinstance(channel, str) else None,
+                )
             else:
+                entry["release_step"] = release_step
                 remaining.append(entry)
         self.escrowed_rewards = remaining
 
@@ -169,7 +178,11 @@ class UserAgent(EconomicAgent):
             if contribution_identifier is None:
                 break
             gross_value = self.parameters.base_gross_value
-            self.model.register_usage_event(contribution_identifier, gross_value)
+            self.model.register_usage_event(
+                contribution_identifier,
+                gross_value,
+                user_id=self.unique_id,
+            )
 
     def select_contribution_for_usage(self) -> str | None:
         identifiers = list(self.model.contributions.keys())

@@ -38,3 +38,5 @@ poetry.lock.bak
 data/reference/
 visuals/output/*
 visuals/reference*/
+visuals/generated/
+artifacts/

@@ -18,7 +18,9 @@ class BitRewardsModel(Model):
         self.parameters = parameters
         self.contribution_graph = ContributionGraph()
         self.contributions: Dict[str, Contribution] = {}
-        self.usage_events: List[UsageEvent] = []
+        self.reward_events: List[dict[str, object]] = []
+        self.usage_events: List[dict[str, object]] = []
+        self.pending_usage_events: List[UsageEvent] = []
         self.next_contribution_index = 0
         self.total_fee_distributed_this_step = 0.0
         self.cumulative_fee_distributed = 0.0
@@ -29,7 +31,7 @@ class BitRewardsModel(Model):
         self.new_creators_this_step: int = 0
         self.new_investors_this_step: int = 0
         self.new_users_this_step: int = 0
-        self.pending_payouts: Dict[str, float] = {}
+        self.pending_payouts: List[dict[str, object]] = []
         self.treasury = TreasuryState()
         self.total_funding_invested = 0.0
         self.initial_total_wealth = 0.0
@@ -119,6 +121,43 @@ class BitRewardsModel(Model):
         self.initial_total_wealth = self._compute_total_wealth()
         self._initialize_token_state()
 
+    def _agent_role_label(self, agent: EconomicAgent) -> str:
+        if isinstance(agent, CreatorAgent):
+            return agent.role
+        if isinstance(agent, InvestorAgent):
+            return "investor"
+        if isinstance(agent, UserAgent):
+            return "user"
+        return "other"
+
+    def _record_reward_event(
+        self,
+        *,
+        step: int,
+        payout_type: str,
+        amount: float,
+        recipient_id: int,
+        source_contribution_id: str,
+        channel: str,
+    ) -> None:
+        if amount <= 0.0:
+            return
+        agent = self.agent_by_identifier.get(recipient_id)
+        if agent is None:
+            return
+        role_label = self._agent_role_label(agent)
+        self.reward_events.append(
+            {
+                "step": int(step),
+                "payout_type": payout_type,
+                "channel": channel,
+                "amount": float(amount),
+                "recipient_id": int(recipient_id),
+                "recipient_role": role_label,
+                "source_contribution_id": source_contribution_id,
+            }
+        )
+
     def _compute_total_wealth(self) -> float:
         total = 0.0
         for agent in self.agent_by_identifier.values():
@@ -142,7 +181,7 @@ class BitRewardsModel(Model):
 
     def reset_step_internal_state(self) -> None:
         self.reset_agents_for_new_step()
-        self.usage_events.clear()
+        self.pending_usage_events.clear()
         self.total_fee_distributed_this_step = 0.0
         self.total_usage_events_this_step = 0
         self.new_creators_this_step = 0
@@ -162,10 +201,11 @@ class BitRewardsModel(Model):
         self.run_phase_for_agent_type(InvestorAgent)
         self.run_phase_for_agent_type(UserAgent)
         self.distribute_usage_event_fees()
+        self._unlock_all_escrows()
         if self.parameters.royalty_batch_interval > 0 and self.current_step % self.parameters.royalty_batch_interval == 0:
             self._distribute_batched_royalties()
         self._flush_pending_payouts_if_due()
-        self._decrement_funding_lockups()
+        self._decrement_funding_lockups(unlock=False)
         self._update_agent_satisfaction_and_churn()
         self._update_token_holding_times()
         self.datacollector.collect(self)
@@ -291,19 +331,28 @@ class BitRewardsModel(Model):
             )
         return identifier
 
-    def register_usage_event(self, contribution_identifier: str, gross_value: float) -> None:
+    def register_usage_event(self, contribution_identifier: str, gross_value: float, user_id: int | None = None) -> None:
         if contribution_identifier not in self.contributions:
             return
+        adjusted_value = gross_value
         if self.parameters.usage_shock_std > 0.0:
-            gross_value = gross_value * math.exp(
+            adjusted_value = adjusted_value * math.exp(
                 self.random.gauss(0.0, self.parameters.usage_shock_std)
             )
         usage_event = UsageEvent(
             contribution_id=contribution_identifier,
-            gross_value=gross_value,
+            gross_value=adjusted_value,
             fee_amount=0.0,
         )
-        self.usage_events.append(usage_event)
+        self.pending_usage_events.append(usage_event)
+        self.usage_events.append(
+            {
+                "step": int(self.current_step),
+                "contribution_id": contribution_identifier,
+                "user_id": int(user_id) if user_id is not None else None,
+                "gross_value": float(adjusted_value),
+            }
+        )
 
     def next_contribution_identifier(self) -> str:
         identifier = f"c{self.next_contribution_index}"
@@ -511,37 +560,61 @@ class BitRewardsModel(Model):
                 )
                 self.token_state.burned_supply += burn
 
-    def _decrement_funding_lockups(self) -> None:
-        if self.parameters.funding_lockup_period_steps <= 0:
-            return
-        for contribution in self.contributions.values():
-            if contribution.contribution_type is not ContributionType.FUNDING:
-                continue
-            remaining = getattr(contribution, "lockup_remaining_steps", 0)
-            if remaining > 0:
-                contribution.lockup_remaining_steps = remaining - 1
+    def _unlock_all_escrows(self) -> None:
         for agent in self.agent_by_identifier.values():
-            if not isinstance(agent, EconomicAgent):
-                continue
-            if not agent.escrowed_rewards:
-                continue
-            for entry in agent.escrowed_rewards:
-                if "release_step" in entry:
-                    entry["release_step"] = int(entry["release_step"]) - 1
-            agent.unlock_escrowed_rewards(self.current_step)
+            if hasattr(agent, "unlock_escrowed_rewards"):
+                agent.unlock_escrowed_rewards(self.current_step)
 
-    def _schedule_payout(self, contribution_identifier: str, amount: float) -> None:
+    def _decrement_funding_lockups(self, unlock: bool = True) -> None:
+        if self.parameters.funding_lockup_period_steps > 0:
+            for contribution in self.contributions.values():
+                if contribution.contribution_type is not ContributionType.FUNDING:
+                    continue
+                remaining = getattr(contribution, "lockup_remaining_steps", 0)
+                if remaining > 0:
+                    contribution.lockup_remaining_steps = remaining - 1
+        if unlock:
+            self._unlock_all_escrows()
+
+    def _schedule_payout(
+        self,
+        contribution_identifier: str,
+        amount: float,
+        payout_type: str | None = None,
+        source_contribution_id: str | None = None,
+        channel: str | None = None,
+    ) -> None:
         if amount <= 0.0:
             return
         lag = self.parameters.payout_lag_steps
+        payout_channel = channel if channel is not None else payout_type
+        entry = {
+            "contribution_id": contribution_identifier,
+            "amount": amount,
+            "payout_type": payout_type,
+            "source_contribution_id": source_contribution_id,
+            "channel": payout_channel,
+        }
         if lag <= 0:
-            self.pay_contribution_owner(contribution_identifier, amount)
+            self.pay_contribution_owner(
+                contribution_identifier,
+                amount,
+                payout_type,
+                source_contribution_id,
+                payout_channel,
+            )
             return
-        self.pending_payouts[contribution_identifier] = (
-            self.pending_payouts.get(contribution_identifier, 0.0) + amount
-        )
+        self.pending_payouts.append(entry)
 
-    def _credit_reward(self, contribution_identifier: str, amount: float, lockup_steps: int = 0) -> None:
+    def _credit_reward(
+        self,
+        contribution_identifier: str,
+        amount: float,
+        lockup_steps: int = 0,
+        payout_type: str | None = None,
+        source_contribution_id: str | None = None,
+        channel: str | None = None,
+    ) -> None:
         if amount <= 0.0:
             return
         contribution = self.contributions.get(contribution_identifier)
@@ -557,10 +630,19 @@ class BitRewardsModel(Model):
                     "contribution_id": contribution_identifier,
                     "amount": amount,
                     "release_step": lock_duration,
+                    "payout_type": payout_type,
+                    "source_contribution_id": source_contribution_id,
+                    "channel": channel if channel is not None else payout_type,
                 }
             )
             return
-        self._schedule_payout(contribution_identifier, amount)
+        self._schedule_payout(
+            contribution_identifier,
+            amount,
+            payout_type,
+            source_contribution_id,
+            channel,
+        )
 
     def _flush_pending_payouts_if_due(self) -> None:
         lag = self.parameters.payout_lag_steps
@@ -570,8 +652,19 @@ class BitRewardsModel(Model):
             return
         if self.current_step % lag != 0:
             return
-        for contribution_identifier, amount in list(self.pending_payouts.items()):
-            self.pay_contribution_owner(contribution_identifier, amount)
+        for entry in list(self.pending_payouts):
+            contribution_identifier = str(entry.get("contribution_id"))
+            amount = float(entry.get("amount", 0.0))
+            payout_type = entry.get("payout_type")
+            source_contribution_id = entry.get("source_contribution_id")
+            channel = entry.get("channel")
+            self.pay_contribution_owner(
+                contribution_identifier,
+                amount,
+                payout_type if isinstance(payout_type, str) else None,
+                source_contribution_id if isinstance(source_contribution_id, str) else None,
+                channel if isinstance(channel, str) else None,
+            )
         self.pending_payouts.clear()
 
     def run_phase_for_agent_type(self, agent_type: Type[EconomicAgent]) -> None:
@@ -613,39 +706,56 @@ class BitRewardsModel(Model):
         return chosen_identifier
 
     def distribute_usage_event_fees(self) -> None:
-        for event in self.usage_events:
+        for event in self.pending_usage_events:
             contribution = self.contributions.get(event.contribution_id)
             if contribution is None:
                 continue
             self.total_usage_events_this_step += 1
-            base_share = self.parameters.get_base_royalty_share_for(contribution.contribution_type)
-            total_fee = event.gross_value * self.parameters.gas_fee_share_rate * base_share
-            if total_fee <= 0.0:
-                continue
-            self.total_fee_distributed_this_step += total_fee
-            self.cumulative_fee_distributed += total_fee
-            self.cumulative_external_inflows += total_fee
-            self.token_state.total_supply += total_fee
-            self.token_state.circulating_supply += total_fee
-            treasury_cut = total_fee * self.parameters.treasury_fee_rate
-            gas_pool = total_fee - treasury_cut
-            if treasury_cut > 0.0:
-                self.treasury.balance += treasury_cut
-                self.treasury.cumulative_inflows += treasury_cut
-            if gas_pool > 0.0:
-                self._distribute_value_pool(event.contribution_id, gas_pool)
+            self._apply_gas_rewards(event.contribution_id, event.gross_value)
             increment = self.parameters.royalty_accrual_per_usage
             if increment > 0.0:
                 contribution.accrued_royalty_value += increment
             if hasattr(contribution, "usage_count"):
                 contribution.usage_count += 1
-        self.usage_events.clear()
+        self.pending_usage_events.clear()
 
-    def _distribute_value_pool(self, root_identifier: str, pool_value: float) -> None:
+    def _apply_gas_rewards(self, used_identifier: str, gross_value: float) -> None:
+        if gross_value <= 0.0:
+            return
+        contribution = self.contributions.get(used_identifier)
+        if contribution is None:
+            return
+        base_share = self.parameters.get_base_royalty_share_for(contribution.contribution_type)
+        gas_share_rate = self.parameters.gas_fee_share_rate
+        if base_share <= 0.0 or gas_share_rate <= 0.0:
+            return
+        total_fee = gas_share_rate * gross_value * base_share
+        if total_fee <= 0.0:
+            return
+        self.total_fee_distributed_this_step += total_fee
+        self.cumulative_fee_distributed += total_fee
+        self.cumulative_external_inflows += total_fee
+        self.token_state.total_supply += total_fee
+        self.token_state.circulating_supply += total_fee
+        treasury_cut = total_fee * self.parameters.treasury_fee_rate
+        if treasury_cut > 0.0:
+            self.treasury.balance += treasury_cut
+            self.treasury.cumulative_inflows += treasury_cut
+        gas_reward_pool = total_fee - treasury_cut
+        if gas_reward_pool <= 0.0:
+            return
+        self._distribute_value_pool(
+            root_identifier=used_identifier,
+            pool_value=gas_reward_pool,
+            payout_type="gas",
+            channel="gas",
+        )
+
+    def _distribute_value_pool(self, root_identifier: str, pool_value: float, payout_type: str, channel: str) -> None:
         if pool_value <= 0.0:
             return
         shares = self.contribution_graph.compute_royalty_shares(
-            start_id=root_identifier,
+            root_identifier=root_identifier,
             total_value=pool_value,
         )
         if not shares:
@@ -657,7 +767,14 @@ class BitRewardsModel(Model):
             lockup_steps = 0
             if contribution.contribution_type is ContributionType.FUNDING:
                 lockup_steps = max(0, getattr(contribution, "lockup_remaining_steps", 0))
-            self._credit_reward(contribution_id, amount, lockup_steps)
+            self._credit_reward(
+                contribution_id,
+                amount,
+                lockup_steps,
+                payout_type=payout_type,
+                source_contribution_id=root_identifier,
+                channel=channel,
+            )
 
     def _distribute_batched_royalties(self) -> None:
         pending: List[tuple[str, float]] = []
@@ -667,7 +784,12 @@ class BitRewardsModel(Model):
         if not pending:
             return
         for root_identifier, total_value in pending:
-            self._distribute_value_pool(root_identifier, total_value)
+            self._distribute_value_pool(
+                root_identifier=root_identifier,
+                pool_value=total_value,
+                payout_type="royalty",
+                channel="royalty",
+            )
             contribution = self.contributions[root_identifier]
             contribution.accrued_royalty_value = 0.0
             self.cumulative_external_inflows += total_value
@@ -766,10 +888,21 @@ class BitRewardsModel(Model):
             lockup_steps = max(0, getattr(contribution, "lockup_remaining_steps", 0))
         self._credit_reward(contribution_identifier, amount, lockup_steps)
 
-    def distribute_fee_pool_for_event(self, event: UsageEvent, fee_pool: float) -> None:
+    def distribute_fee_pool_for_event(
+        self,
+        event: UsageEvent,
+        fee_pool: float,
+        payout_type: str = "gas",
+        channel: str | None = None,
+    ) -> None:
         if fee_pool <= 0.0:
             return
-        self._distribute_value_pool(event.contribution_id, fee_pool)
+        self._distribute_value_pool(
+            event.contribution_id,
+            fee_pool,
+            payout_type,
+            channel if channel is not None else payout_type,
+        )
 
     def _infer_role_for_agent(self, agent: EconomicAgent) -> str | None:
         if isinstance(agent, CreatorAgent):
@@ -780,7 +913,14 @@ class BitRewardsModel(Model):
             return "user"
         return None
 
-    def pay_contribution_owner(self, contribution_identifier: str, amount: float) -> None:
+    def pay_contribution_owner(
+        self,
+        contribution_identifier: str,
+        amount: float,
+        payout_type: str | None = None,
+        source_contribution_id: str | None = None,
+        channel: str | None = None,
+    ) -> None:
         if amount <= 0.0:
             return
         contribution = self.contributions.get(contribution_identifier)
@@ -814,13 +954,26 @@ class BitRewardsModel(Model):
             else:
                 agent.receive_income(gated_amount)
         contribution_type = contribution.contribution_type
-        self.reward_paid_by_type_this_step[contribution_type] += amount
-        self.total_reward_paid_by_type[contribution_type] += amount
+        self.reward_paid_by_type_this_step[contribution_type] += gated_amount
+        self.total_reward_paid_by_type[contribution_type] += gated_amount
         role_name = self._infer_role_for_agent(agent)
         if role_name is None:
             return
-        self.reward_paid_by_role_this_step[role_name] += amount
-        self.total_reward_paid_by_role[role_name] += amount
+        self.reward_paid_by_role_this_step[role_name] += gated_amount
+        self.total_reward_paid_by_role[role_name] += gated_amount
+        if payout_type is None or source_contribution_id is None:
+            return
+        if gated_amount <= 0.0:
+            return
+        payout_channel = channel if channel is not None else payout_type
+        self._record_reward_event(
+            step=self.current_step,
+            payout_type=payout_type,
+            amount=gated_amount,
+            recipient_id=owner_identifier,
+            source_contribution_id=source_contribution_id,
+            channel=payout_channel,
+        )
 
 
 def contribution_count(model: BitRewardsModel) -> int:

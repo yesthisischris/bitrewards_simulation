@@ -2,6 +2,8 @@
 
 ## At a glance
 
+This model currently corresponds to the BITrewards whitepaper V4 (docs/whitepaper_v4.md), with some simplifying assumptions.
+
 - Agents: creators, investors, users
 - Structure: contribution DAG with edge splits for royalties and funding
 - Economics: fees from usage, funding principal transfers, treasury cut, reputation gates, lockups, payout lags, token supply tracking
@@ -38,3 +40,10 @@ Common fields from `SimulationParameters`:
 - Frictions: `funding_lockup_period_steps`, `payout_lag_steps`, `creator_contribution_cost`
 - Token: `token_initial_supply`, `token_inflation_rate`, `token_buyback_burn_rate`
 - Reputation and identity: `min_reputation_for_full_rewards`, `reputation_gain_per_usage`, `reputation_decay_per_step`, `reputation_penalty_for_churn`, `identity_creation_cost`
+
+## Instrumentation
+
+- Rewards: `model.reward_events` tracks per-payout entries with `step`, `payout_type`, `channel`, `amount`, `recipient_id`, `recipient_role`, `source_contribution_id`.
+- Usage: `model.usage_events` captures `step`, `contribution_id`, `user_id`, and realized `gross_value` for every usage event.
+- Tracing quality: `model.tracing_metrics` reports `true_links`, `detected_true_links`, `false_positive_links`, and `missed_true_links`.
+- Graph export: `ContributionGraph.to_networkx()` returns a `networkx.DiGraph` with contribution ids as nodes and edges carrying royalty split attributes for visualization.
