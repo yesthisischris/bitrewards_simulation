@@ -672,11 +672,10 @@ class BitRewardsModel(Model):
         contribution = self.contributions.get(used_identifier)
         if contribution is None:
             return
-        base_share = self.parameters.get_base_royalty_share_for(contribution.contribution_type)
         gas_share_rate = self.parameters.gas_fee_share_rate
-        if base_share <= 0.0 or gas_share_rate <= 0.0:
+        if gas_share_rate <= 0.0:
             return
-        total_fee = gas_share_rate * gross_value * base_share
+        total_fee = gas_share_rate * gross_value
         if total_fee <= 0.0:
             return
         self.total_fee_distributed_this_step += total_fee
@@ -738,6 +737,8 @@ class BitRewardsModel(Model):
             contribution.accrued_royalty_value = 0.0
 
     def _update_agent_satisfaction_and_churn(self) -> None:
+        if getattr(self.parameters, "disable_churn", False):
+            return
         epsilon = 1e-6
         k = self.parameters.satisfaction_logistic_k
         threshold = self.parameters.satisfaction_churn_threshold

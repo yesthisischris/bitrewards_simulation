@@ -11,7 +11,7 @@ class SimulationParameters:
     investor_count: int = 3
     user_count: int = 20
     max_steps: int = 200
-    gas_fee_share_rate: float = 0.005
+    gas_fee_share_rate: float = 0.004
     tracing_accuracy: float = 0.8
     tracing_false_positive_rate: float = 0.05
     creator_base_contribution_probability: float = 0.3
@@ -24,20 +24,20 @@ class SimulationParameters:
     initial_agent_satisfaction: float = 1.0
     supporting_creator_fraction: float = 0.3
     funding_royalty_min: float = 0.01
-    funding_royalty_max: float = 0.03
+    funding_royalty_max: float = 0.05
     funding_min_amount: float = 5.0
     funding_max_amount: float = 50.0
     royalty_accrual_per_usage: float = 1.0
     royalty_batch_interval: int = 30
 
     default_derivative_split: float = 0.5
-    supporting_derivative_split: float = 0.25
+    supporting_derivative_split: float = 0.5
 
     core_research_base_royalty_share: float = 1.0
     funding_base_royalty_share: float = 1.0
     supporting_base_royalty_share: float = 1.0
 
-    funding_split_fraction: float = 0.02
+    funding_split_fraction: float = 0.015
     funding_contribution_cost: float = 10.0
     investor_max_funding_per_step: int = 1
     investor_min_target_quality: float = 0.5
@@ -68,6 +68,7 @@ class SimulationParameters:
     reputation_penalty_for_churn: float = 0.0
     reputation_decay_per_step: float = 0.0
     creator_contribution_cost: float = 0.0
+    disable_churn: bool = False
 
     def get_base_royalty_share_for(self, contribution_type: ContributionType) -> float:
         if contribution_type is ContributionType.CORE_RESEARCH:

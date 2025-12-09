@@ -59,45 +59,37 @@ class ContributionGraph:
         if total_value <= 0.0 or root_id is None or root_id not in self.graph.nodes:
             return {}
         shares: Dict[str, float] = {}
-        remaining: List[tuple[str, float]] = [(root_id, total_value)]
+        current_id = root_id
+        pool_value = total_value
         visited = set()
-        while remaining:
-            current_id, pool_value = remaining.pop()
-            if pool_value <= 0.0:
-                continue
-            key = (current_id, pool_value)
-            if key in visited:
-                continue
-            visited.add(key)
+        while pool_value > 0.0 and current_id not in visited:
+            visited.add(current_id)
             parents = self.get_parents(current_id)
             if not parents:
                 shares[current_id] = shares.get(current_id, 0.0) + pool_value
-                continue
-            split_values = [self.get_split_fraction(parent, current_id) for parent in parents]
-            clipped_splits = [max(0.0, min(1.0, value)) for value in split_values]
-            total_split = sum(clipped_splits)
-            if total_split == 0.0:
-                shares[current_id] = shares.get(current_id, 0.0) + pool_value
-                continue
-            if total_split > 1.0:
-                normalized_splits = [value / total_split for value in clipped_splits]
+                break
+            parent_splits = [(parent, self.get_split_fraction(parent, current_id)) for parent in parents]
+            funding_parents = [
+                pair for pair in parent_splits if self.get_edge_type(pair[0], current_id) == "funding"
+            ]
+            if funding_parents:
+                funding_parents.sort(key=lambda x: (-x[1], x[0]))
+                selected_parent, selected_split = funding_parents[0]
             else:
-                normalized_splits = clipped_splits
-            parent_amounts: List[float] = []
-            total_parent_amount = 0.0
-            for value in normalized_splits:
-                amount = pool_value * value
-                parent_amounts.append(amount)
-                total_parent_amount += amount
-            own_amount = pool_value - total_parent_amount
-            if own_amount < 0.0:
-                own_amount = 0.0
-            if own_amount > 0.0:
-                shares[current_id] = shares.get(current_id, 0.0) + own_amount
-            for parent_id, amount in zip(parents, parent_amounts):
-                if amount <= 0.0:
-                    continue
-                remaining.append((parent_id, amount))
+                parent_splits.sort(key=lambda x: (-x[1], x[0]))
+                selected_parent, selected_split = parent_splits[0]
+            split = max(0.0, min(1.0, selected_split))
+            own_share = pool_value * (1.0 - split)
+            if own_share > 0.0:
+                shares[current_id] = shares.get(current_id, 0.0) + own_share
+            parent_share = pool_value * split
+            if parent_share <= 0.0 or selected_parent is None:
+                break
+            if self.get_edge_type(selected_parent, current_id) == "funding":
+                shares[selected_parent] = shares.get(selected_parent, 0.0) + parent_share
+                break
+            pool_value = parent_share
+            current_id = selected_parent
         return shares
 
     def to_networkx(self) -> nx.DiGraph:
