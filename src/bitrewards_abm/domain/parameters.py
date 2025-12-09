@@ -81,6 +81,8 @@ class SimulationParameters:
     investor_rewards_structure_enabled: bool = True
     investor_return_cap_multiple: float = 3.0
     investor_post_cap_payout_fraction: float = 0.25
+    royalty_mode: str = "single_path"
+    royalty_keep_fraction: float = 0.5
 
     def get_base_royalty_share_for(self, contribution_type: ContributionType) -> float:
         if contribution_type is ContributionType.CORE_RESEARCH:

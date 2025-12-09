@@ -768,6 +768,8 @@ class BitRewardsModel(Model):
         shares = self.contribution_graph.compute_royalty_shares(
             root_identifier=root_identifier,
             total_value=pool_value,
+            mode=getattr(self.parameters, "royalty_mode", "single_path"),
+            keep_fraction=getattr(self.parameters, "royalty_keep_fraction", 0.5),
         )
         if not shares:
             return

@@ -54,10 +54,17 @@ class ContributionGraph:
         root_identifier: str | None = None,
         total_value: float = 0.0,
         start_id: str | None = None,
+        mode: str = "single_path",
+        keep_fraction: float = 0.0,
     ) -> Dict[str, float]:
         root_id = root_identifier if root_identifier is not None else start_id
         if total_value <= 0.0 or root_id is None or root_id not in self.graph.nodes:
             return {}
+        if mode == "proportional_50_50":
+            return self._compute_proportional_shares(root_id, total_value, keep_fraction)
+        return self._compute_single_path_shares(root_id, total_value)
+
+    def _compute_single_path_shares(self, root_id: str, total_value: float) -> Dict[str, float]:
         shares: Dict[str, float] = {}
         current_id = root_id
         pool_value = total_value
@@ -90,6 +97,38 @@ class ContributionGraph:
                 break
             pool_value = parent_share
             current_id = selected_parent
+        return shares
+
+    def _compute_proportional_shares(self, root_id: str, total_value: float, keep_fraction: float) -> Dict[str, float]:
+        shares: Dict[str, float] = {}
+        keep = max(0.0, min(1.0, keep_fraction))
+        remaining: List[tuple[str, float]] = [(root_id, total_value)]
+        while remaining:
+            current_id, pool_value = remaining.pop()
+            if pool_value <= 0.0 or current_id not in self.graph.nodes:
+                continue
+            parents = self.get_parents(current_id)
+            keep_amount = pool_value * keep
+            upstream_pool = pool_value - keep_amount
+            shares[current_id] = shares.get(current_id, 0.0) + keep_amount
+            if not parents:
+                if upstream_pool > 0.0:
+                    shares[current_id] = shares.get(current_id, 0.0) + upstream_pool
+                continue
+            split_values = [self.get_split_fraction(parent, current_id) for parent in parents]
+            clipped = [max(0.0, min(1.0, value)) for value in split_values]
+            total_split = sum(clipped)
+            if total_split <= 0.0:
+                shares[current_id] = shares.get(current_id, 0.0) + upstream_pool
+                continue
+            if total_split > 1.0:
+                normalized = [value / total_split for value in clipped]
+            else:
+                normalized = clipped
+            for parent_id, fraction in zip(parents, normalized):
+                amount = upstream_pool * fraction
+                if amount > 0.0:
+                    remaining.append((parent_id, amount))
         return shares
 
     def to_networkx(self) -> nx.DiGraph:

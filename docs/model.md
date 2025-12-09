@@ -31,6 +31,7 @@ This model currently corresponds to the BITrewards whitepaper V4 (docs/whitepape
 - Simulation-only churn: exits can be disabled by raising ROI/satisfaction thresholds or windows or by setting `disable_churn` when strict whitepaper fidelity is desired.
 - Honor Seal: roots can mint a seal with configurable adoption rate, mint cost, fake probability, and detection; derivatives inherit seal status; users bias selection toward sealed contributions with time-based ramp.
 - Investor cap and tail: funding contributions track principal and cumulative rewards; investors receive full share until `investor_return_cap_multiple` times principal, then a reduced share `investor_post_cap_payout_fraction` with surplus routed to treasury when enabled.
+- Royalty traversal modes: default single-path traversal preferring funding edges; optional proportional mode that keeps `royalty_keep_fraction` locally and routes the remainder upstream by split weights (50/50 when keep is 0.5).
 
 ## Parameter highlights
 
@@ -44,6 +45,7 @@ Common fields from `SimulationParameters`:
 - Reputation: `min_reputation_for_full_rewards`, `reputation_gain_per_usage`, `reputation_decay_per_step`, `reputation_penalty_for_churn`
 - Treasury and payouts: `treasury_fee_rate`, `treasury_funding_rate`, `payout_lag_steps`
 - Honor Seal: `honor_seal_enabled`, `honor_seal_initial_adoption_rate`, `honor_seal_mint_cost_btc`, `honor_seal_demand_multiplier`, `honor_seal_unsealed_penalty_multiplier`, `honor_seal_fake_rate`, `honor_seal_fake_detection_prob_per_step`, `honor_seal_enforcement_ramp_steps`, `honor_seal_dishonored_penalty_multiplier`
+- Royalty traversal: `royalty_mode` (`single_path` or `proportional_50_50`), `royalty_keep_fraction`
 
 ## Instrumentation
 
