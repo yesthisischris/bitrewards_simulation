@@ -29,6 +29,7 @@ poetry run python experiments/run_batch.py --config configs/baseline.toml --out-
 - Arrivals and identity: `creator_arrival_rate`, `investor_arrival_rate`, `user_arrival_rate`, ROI sensitivities per role, `identity_creation_cost`
 - Reputation and treasury: `min_reputation_for_full_rewards`, `reputation_gain_per_usage`, `reputation_decay_per_step`, `reputation_penalty_for_churn`, `treasury_fee_rate`, `treasury_funding_rate`, `payout_lag_steps`
 - Honor Seal: `honor_seal_enabled`, `honor_seal_initial_adoption_rate`, `honor_seal_mint_cost_btc`, `honor_seal_demand_multiplier`, `honor_seal_unsealed_penalty_multiplier`, `honor_seal_fake_rate`, `honor_seal_fake_detection_prob_per_step`, `honor_seal_enforcement_ramp_steps`, `honor_seal_dishonored_penalty_multiplier`
+- Investor rewards: `investor_rewards_structure_enabled`, `investor_return_cap_multiple`, `investor_post_cap_payout_fraction`
 
 Contributions map to Bitcoin ordinal NFTs; rewards and fees are tracked in BTC terms without a native fungible token supply.
 

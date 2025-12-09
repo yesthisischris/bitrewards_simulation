@@ -325,6 +325,8 @@ class BitRewardsModel(Model):
             parents=parents,
             kind="funding",
             royalty_percent=royalty_percent,
+            funding_amount=amount,
+            funding_cumulative_rewards=0.0,
         )
         lockup_steps = max(0, self.parameters.funding_lockup_period_steps)
         contribution.lockup_remaining_steps = lockup_steps
@@ -926,6 +928,15 @@ class BitRewardsModel(Model):
         if slashed_amount > 0.0:
             self.treasury.balance += slashed_amount
             self.treasury.cumulative_inflows += slashed_amount
+        redirected_to_treasury = 0.0
+        if contribution.contribution_type is ContributionType.FUNDING:
+            gated_amount, redirected_to_treasury = self._apply_investor_payout_structure(
+                contribution,
+                gated_amount,
+            )
+            if redirected_to_treasury > 0.0:
+                self.treasury.balance += redirected_to_treasury
+                self.treasury.cumulative_inflows += redirected_to_treasury
         if gated_amount > 0.0:
             if isinstance(agent, EconomicAgent):
                 agent.record_income(gated_amount)
@@ -955,6 +966,44 @@ class BitRewardsModel(Model):
             source_contribution_id=source_contribution_id,
             channel=payout_channel,
         )
+
+    def _apply_investor_payout_structure(
+        self,
+        contribution: Contribution,
+        amount: float,
+    ) -> tuple[float, float]:
+        params = self.parameters
+        if contribution.contribution_type is not ContributionType.FUNDING:
+            return amount, 0.0
+        if not getattr(params, "investor_rewards_structure_enabled", True):
+            contribution.funding_cumulative_rewards += amount
+            return amount, 0.0
+        principal = getattr(contribution, "funding_amount", 0.0)
+        if principal <= 0.0:
+            contribution.funding_cumulative_rewards += amount
+            return amount, 0.0
+        cap_multiple = max(0.0, getattr(params, "investor_return_cap_multiple", 0.0))
+        if cap_multiple <= 0.0:
+            contribution.funding_cumulative_rewards += amount
+            return amount, 0.0
+        cap = principal * cap_multiple
+        paid_so_far = getattr(contribution, "funding_cumulative_rewards", 0.0)
+        tail_fraction = max(0.0, min(1.0, getattr(params, "investor_post_cap_payout_fraction", 1.0)))
+        if paid_so_far >= cap:
+            effective = amount * tail_fraction
+            redirected = amount - effective
+            contribution.funding_cumulative_rewards = paid_so_far + effective
+            return effective, redirected
+        remaining_cap = cap - paid_so_far
+        if amount <= remaining_cap:
+            contribution.funding_cumulative_rewards = paid_so_far + amount
+            return amount, 0.0
+        overflow = amount - remaining_cap
+        tail_part = overflow * tail_fraction
+        effective = remaining_cap + tail_part
+        redirected = amount - effective
+        contribution.funding_cumulative_rewards = paid_so_far + effective
+        return effective, redirected
 
 
 def contribution_count(model: BitRewardsModel) -> int:

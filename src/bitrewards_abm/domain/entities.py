@@ -43,6 +43,8 @@ class Contribution:
     accrued_royalty_value: float = 0.0
     honor_seal_status: HonorSealStatus = HonorSealStatus.NONE
     honor_seal_mint_step: Optional[int] = None
+    funding_amount: float = 0.0
+    funding_cumulative_rewards: float = 0.0
 
 
 @dataclass

@@ -30,6 +30,7 @@ This model currently corresponds to the BITrewards whitepaper V4 (docs/whitepape
 - Treasury and frictions: gas and royalty payouts flow as BTC; treasury cuts apply per step; payout lag buffers payments for `payout_lag_steps`; funding lockups escrow rewards until release.
 - Simulation-only churn: exits can be disabled by raising ROI/satisfaction thresholds or windows or by setting `disable_churn` when strict whitepaper fidelity is desired.
 - Honor Seal: roots can mint a seal with configurable adoption rate, mint cost, fake probability, and detection; derivatives inherit seal status; users bias selection toward sealed contributions with time-based ramp.
+- Investor cap and tail: funding contributions track principal and cumulative rewards; investors receive full share until `investor_return_cap_multiple` times principal, then a reduced share `investor_post_cap_payout_fraction` with surplus routed to treasury when enabled.
 
 ## Parameter highlights
 

@@ -78,6 +78,9 @@ class SimulationParameters:
     honor_seal_fake_detection_prob_per_step: float = 0.0
     honor_seal_enforcement_ramp_steps: int = 0
     honor_seal_dishonored_penalty_multiplier: float = 0.5
+    investor_rewards_structure_enabled: bool = True
+    investor_return_cap_multiple: float = 3.0
+    investor_post_cap_payout_fraction: float = 0.25
 
     def get_base_royalty_share_for(self, contribution_type: ContributionType) -> float:
         if contribution_type is ContributionType.CORE_RESEARCH:
