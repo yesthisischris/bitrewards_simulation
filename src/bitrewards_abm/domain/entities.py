@@ -18,6 +18,13 @@ class EdgeType(str, Enum):
     OTHER = "other"
 
 
+class HonorSealStatus(str, Enum):
+    NONE = "none"
+    HONEST = "honest"
+    FAKE = "fake"
+    DISHONORED = "dishonored"
+
+
 @dataclass
 class Contribution:
     contribution_id: str
@@ -34,6 +41,8 @@ class Contribution:
     is_performance_verified: bool = False
     kind: Optional[str] = None
     accrued_royalty_value: float = 0.0
+    honor_seal_status: HonorSealStatus = HonorSealStatus.NONE
+    honor_seal_mint_step: Optional[int] = None
 
 
 @dataclass

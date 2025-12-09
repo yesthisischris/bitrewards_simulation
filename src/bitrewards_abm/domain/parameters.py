@@ -69,6 +69,15 @@ class SimulationParameters:
     reputation_decay_per_step: float = 0.0
     creator_contribution_cost: float = 0.0
     disable_churn: bool = False
+    honor_seal_enabled: bool = False
+    honor_seal_initial_adoption_rate: float = 0.0
+    honor_seal_mint_cost_btc: float = 0.0
+    honor_seal_demand_multiplier: float = 1.0
+    honor_seal_unsealed_penalty_multiplier: float = 1.0
+    honor_seal_fake_rate: float = 0.0
+    honor_seal_fake_detection_prob_per_step: float = 0.0
+    honor_seal_enforcement_ramp_steps: int = 0
+    honor_seal_dishonored_penalty_multiplier: float = 0.5
 
     def get_base_royalty_share_for(self, contribution_type: ContributionType) -> float:
         if contribution_type is ContributionType.CORE_RESEARCH:

@@ -6,7 +6,13 @@ from typing import Dict, List, Type
 from mesa import Model
 from mesa.datacollection import DataCollector
 
-from bitrewards_abm.domain.entities import Contribution, ContributionType, UsageEvent, TreasuryState
+from bitrewards_abm.domain.entities import (
+    Contribution,
+    ContributionType,
+    UsageEvent,
+    TreasuryState,
+    HonorSealStatus,
+)
 from bitrewards_abm.domain.parameters import SimulationParameters
 from bitrewards_abm.infrastructure.graph_store import ContributionGraph
 from bitrewards_abm.simulation.agents import CreatorAgent, EconomicAgent, InvestorAgent, UserAgent
@@ -25,6 +31,9 @@ class BitRewardsModel(Model):
         self.total_fee_distributed_this_step = 0.0
         self.cumulative_fee_distributed = 0.0
         self.total_usage_events_this_step = 0
+        self.usage_events_by_honor_seal_this_step: Dict[HonorSealStatus, int] = {
+            status: 0 for status in HonorSealStatus
+        }
         self.agent_by_identifier: Dict[int, EconomicAgent] = {}
         self.next_agent_identifier: int = 0
         self.current_step: int = 0
@@ -97,6 +106,11 @@ class BitRewardsModel(Model):
                 "new_investors_this_step": new_investors_this_step,
                 "new_users_this_step": new_users_this_step,
                 "locked_funding_positions": locked_funding_positions,
+                "honor_seal_honest_contribution_count": honor_seal_honest_contribution_count,
+                "honor_seal_fake_contribution_count": honor_seal_fake_contribution_count,
+                "honor_seal_dishonored_contribution_count": honor_seal_dishonored_contribution_count,
+                "honor_seal_sealed_usage_share": honor_seal_sealed_usage_share,
+                "honor_seal_dishonored_usage_share": honor_seal_dishonored_usage_share,
             },
             agent_reporters={
                 "wealth": "wealth",
@@ -165,6 +179,8 @@ class BitRewardsModel(Model):
             self.reward_paid_by_type_this_step[contribution_type] = 0.0
         for role in self.reward_paid_by_role_this_step:
             self.reward_paid_by_role_this_step[role] = 0.0
+        for status in self.usage_events_by_honor_seal_this_step:
+            self.usage_events_by_honor_seal_this_step[status] = 0
 
     def step(self) -> None:
         self.current_step += 1
@@ -174,6 +190,7 @@ class BitRewardsModel(Model):
         self.run_phase_for_agent_type(InvestorAgent)
         self.run_phase_for_agent_type(UserAgent)
         self.distribute_usage_event_fees()
+        self._enforce_honor_seal()
         self._unlock_all_escrows()
         if self.parameters.royalty_batch_interval > 0 and self.current_step % self.parameters.royalty_batch_interval == 0:
             self._distribute_batched_royalties()
@@ -206,6 +223,11 @@ class BitRewardsModel(Model):
         if parent_identifier is not None and parent_identifier in self.contributions:
             true_parents.append(parent_identifier)
         contribution.true_parents = true_parents
+        parent_for_inheritance: str | None = true_parents[0] if true_parents else None
+        if parent_for_inheritance is None:
+            self._apply_honor_seal_to_root(contribution, creator)
+        else:
+            self._inherit_honor_seal(contribution, parent_for_inheritance)
         self.tracing_metrics["true_links"] += len(true_parents)
         if not true_parents:
             return identifier
@@ -242,6 +264,35 @@ class BitRewardsModel(Model):
                     edge_type=edge_type,
                 )
         return identifier
+
+    def _apply_honor_seal_to_root(self, contribution: Contribution, creator: CreatorAgent) -> None:
+        if not getattr(self.parameters, "honor_seal_enabled", False):
+            return
+        adoption_rate = getattr(self.parameters, "honor_seal_initial_adoption_rate", 0.0)
+        if adoption_rate <= 0.0:
+            return
+        if self.random.random() > adoption_rate:
+            return
+        cost = getattr(self.parameters, "honor_seal_mint_cost_btc", 0.0)
+        if cost > 0.0 and creator.wealth < cost:
+            return
+        if cost > 0.0:
+            creator.wealth -= cost
+            self.treasury.balance += cost
+            self.treasury.cumulative_inflows += cost
+        fake_rate = getattr(self.parameters, "honor_seal_fake_rate", 0.0)
+        if fake_rate > 0.0 and self.random.random() < fake_rate:
+            contribution.honor_seal_status = HonorSealStatus.FAKE
+        else:
+            contribution.honor_seal_status = HonorSealStatus.HONEST
+        contribution.honor_seal_mint_step = self.current_step
+
+    def _inherit_honor_seal(self, contribution: Contribution, parent_identifier: str) -> None:
+        parent = self.contributions.get(parent_identifier)
+        if parent is None:
+            return
+        contribution.honor_seal_status = parent.honor_seal_status
+        contribution.honor_seal_mint_step = parent.honor_seal_mint_step
 
     def register_funding_contribution(
         self,
@@ -658,6 +709,9 @@ class BitRewardsModel(Model):
             if contribution is None:
                 continue
             self.total_usage_events_this_step += 1
+            status = getattr(contribution, "honor_seal_status", HonorSealStatus.NONE)
+            if status in self.usage_events_by_honor_seal_this_step:
+                self.usage_events_by_honor_seal_this_step[status] += 1
             self._apply_gas_rewards(event.contribution_id, event.gross_value)
             increment = self.parameters.royalty_accrual_per_usage
             if increment > 0.0:
@@ -665,6 +719,18 @@ class BitRewardsModel(Model):
             if hasattr(contribution, "usage_count"):
                 contribution.usage_count += 1
         self.pending_usage_events.clear()
+
+    def _enforce_honor_seal(self) -> None:
+        if not getattr(self.parameters, "honor_seal_enabled", False):
+            return
+        detection_prob = getattr(self.parameters, "honor_seal_fake_detection_prob_per_step", 0.0)
+        if detection_prob <= 0.0:
+            return
+        for contribution in self.contributions.values():
+            if contribution.honor_seal_status is not HonorSealStatus.FAKE:
+                continue
+            if self.random.random() < detection_prob:
+                contribution.honor_seal_status = HonorSealStatus.DISHONORED
 
     def _apply_gas_rewards(self, used_identifier: str, gross_value: float) -> None:
         if gross_value <= 0.0:
@@ -1110,3 +1176,31 @@ def locked_funding_positions(model: BitRewardsModel) -> int:
         ):
             count += 1
     return count
+
+
+def honor_seal_honest_contribution_count(model: BitRewardsModel) -> int:
+    return sum(1 for c in model.contributions.values() if c.honor_seal_status is HonorSealStatus.HONEST)
+
+
+def honor_seal_fake_contribution_count(model: BitRewardsModel) -> int:
+    return sum(1 for c in model.contributions.values() if c.honor_seal_status is HonorSealStatus.FAKE)
+
+
+def honor_seal_dishonored_contribution_count(model: BitRewardsModel) -> int:
+    return sum(1 for c in model.contributions.values() if c.honor_seal_status is HonorSealStatus.DISHONORED)
+
+
+def honor_seal_sealed_usage_share(model: BitRewardsModel) -> float:
+    sealed = model.usage_events_by_honor_seal_this_step.get(HonorSealStatus.HONEST, 0) + model.usage_events_by_honor_seal_this_step.get(HonorSealStatus.FAKE, 0)
+    total = sealed + model.usage_events_by_honor_seal_this_step.get(HonorSealStatus.NONE, 0) + model.usage_events_by_honor_seal_this_step.get(HonorSealStatus.DISHONORED, 0)
+    if total <= 0:
+        return 0.0
+    return sealed / total
+
+
+def honor_seal_dishonored_usage_share(model: BitRewardsModel) -> float:
+    total = model.usage_events_by_honor_seal_this_step.get(HonorSealStatus.HONEST, 0) + model.usage_events_by_honor_seal_this_step.get(HonorSealStatus.FAKE, 0) + model.usage_events_by_honor_seal_this_step.get(HonorSealStatus.NONE, 0) + model.usage_events_by_honor_seal_this_step.get(HonorSealStatus.DISHONORED, 0)
+    if total <= 0:
+        return 0.0
+    dishonored = model.usage_events_by_honor_seal_this_step.get(HonorSealStatus.DISHONORED, 0)
+    return dishonored / total

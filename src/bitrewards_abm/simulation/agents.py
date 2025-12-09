@@ -4,7 +4,7 @@ from typing import List, Set
 
 from mesa import Agent
 
-from bitrewards_abm.domain.entities import ContributionType
+from bitrewards_abm.domain.entities import ContributionType, HonorSealStatus
 from bitrewards_abm.domain.parameters import SimulationParameters
 
 
@@ -183,5 +183,36 @@ class UserAgent(EconomicAgent):
         identifiers = list(self.model.contributions.keys())
         if not identifiers:
             return None
-        index = self.random.randrange(len(identifiers))
+        weights: List[float] = []
+        for identifier in identifiers:
+            contribution = self.model.contributions.get(identifier)
+            if contribution is None:
+                weights.append(1.0)
+                continue
+            quality = max(contribution.quality, 0.01)
+            seal_weight = self._honor_seal_weight(contribution)
+            weights.append(quality * seal_weight)
+        if not weights:
+            index = self.random.randrange(len(identifiers))
+            return identifiers[index]
+        index = self.random.choices(range(len(identifiers)), weights=weights, k=1)[0]
         return identifiers[index]
+
+    def _honor_seal_weight(self, contribution) -> float:
+        if not getattr(self.parameters, "honor_seal_enabled", False):
+            return 1.0
+        ramp_steps = getattr(self.parameters, "honor_seal_enforcement_ramp_steps", 0)
+        if ramp_steps > 0:
+            ramp = min(1.0, self.model.current_step / ramp_steps)
+        else:
+            ramp = 1.0
+        status = getattr(contribution, "honor_seal_status", HonorSealStatus.NONE)
+        if status is HonorSealStatus.HONEST:
+            return 1.0 + ramp * (self.parameters.honor_seal_demand_multiplier - 1.0)
+        if status is HonorSealStatus.FAKE:
+            return 1.0 + ramp * (self.parameters.honor_seal_demand_multiplier - 1.0)
+        if status is HonorSealStatus.DISHONORED:
+            penalty = self.parameters.honor_seal_dishonored_penalty_multiplier
+            return max(0.0, 1.0 - ramp * (1.0 - penalty))
+        penalty = self.parameters.honor_seal_unsealed_penalty_multiplier
+        return max(0.0, 1.0 - ramp * (1.0 - penalty))
